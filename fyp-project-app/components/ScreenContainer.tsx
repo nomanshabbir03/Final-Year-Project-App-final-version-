@@ -1,0 +1,55 @@
+import React from 'react';
+import { ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+type Props = {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  safeAreaStyle?: StyleProp<ViewStyle>;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+};
+
+export function ScreenContainer({
+  title,
+  subtitle,
+  children,
+  safeAreaStyle,
+  contentContainerStyle,
+}: Props) {
+  return (
+    <SafeAreaView style={[styles.safeArea, safeAreaStyle]}>
+      <ScrollView contentContainerStyle={[styles.contentContainer, contentContainerStyle]}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{title}</Text>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        </View>
+        {children}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  contentContainer: {
+    padding: 16,
+    gap: 14,
+  },
+  header: {
+    gap: 4,
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#475569',
+  },
+});
