@@ -5,6 +5,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 
+import { Colors } from '../constants/theme';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { useAppContext } from '../context/AppContext';
 import type { RootStackParamList } from '../navigation/types';
@@ -104,14 +105,14 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    color: '#334155',
+    color: Colors.textSecondary,
     fontWeight: '600',
   },
   input: {
     height: 44,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: Colors.borderLight,
     borderRadius: 10,
     paddingHorizontal: 12,
   },
@@ -122,25 +123,25 @@ const styles = StyleSheet.create({
   },
   pickerWrap: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: Colors.borderLight,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
   },
   deadlineButton: {
     height: 44,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: Colors.borderLight,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
   deadlineText: {
-    color: '#0f172a',
+    color: Colors.textPrimary,
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: Colors.primary,
     borderRadius: 10,
     height: 46,
     alignItems: 'center',
@@ -148,11 +149,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   saveText: {
-    color: '#ffffff',
+    color: Colors.white,
     fontWeight: '700',
   },
   errorText: {
-    color: '#b91c1c',
+    color: Colors.error,
     fontWeight: '600',
     marginTop: 4,
   },

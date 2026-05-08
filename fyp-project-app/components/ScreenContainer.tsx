@@ -2,6 +2,8 @@ import React from 'react';
 import { ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Colors } from '../constants/theme';
+
 type Props = {
   title: string;
   subtitle?: string;
@@ -33,7 +35,7 @@ export function ScreenContainer({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: Colors.bgLight,
   },
   contentContainer: {
     padding: 16,
@@ -46,10 +48,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.primary,
   },
   subtitle: {
     fontSize: 14,
-    color: '#475569',
+    color: Colors.textSecondary,
   },
 });

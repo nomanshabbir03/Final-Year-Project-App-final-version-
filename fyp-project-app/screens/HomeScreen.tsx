@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { Colors } from '../constants/theme';
 
 export function HomeScreen() {
   const { tasks, habits, weather } = useAppContext();
@@ -89,7 +90,7 @@ export function HomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#eef2f7',
+    backgroundColor: Colors.bgLight,
   },
   contentContainer: {
     padding: 16,
@@ -97,7 +98,7 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
   heroCard: {
-    backgroundColor: '#0f172a',
+    backgroundColor: Colors.textPrimary,
     borderRadius: 18,
     padding: 16,
     gap: 8,
@@ -108,7 +109,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   overline: {
-    color: '#94a3b8',
+    color: Colors.textHint,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     fontSize: 11,
@@ -117,24 +118,24 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 30,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: Colors.white,
   },
   subtitle: {
-    color: '#cbd5e1',
+    color: Colors.textSecondary,
     marginTop: 3,
   },
   userText: {
-    color: '#e2e8f0',
+    color: Colors.textSecondary,
     fontSize: 12,
   },
   logoutButton: {
-    backgroundColor: '#1e293b',
+    backgroundColor: Colors.surfaceDark,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   logoutText: {
-    color: '#e2e8f0',
+    color: Colors.textSecondary,
     fontWeight: '700',
     fontSize: 12,
   },
@@ -144,40 +145,40 @@ const styles = StyleSheet.create({
   },
   kpiCard: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#dbe3ef',
+    borderColor: Colors.borderLight,
     paddingVertical: 10,
     paddingHorizontal: 10,
     gap: 4,
   },
   kpiLabel: {
-    color: '#64748b',
+    color: Colors.textHint,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
   },
   kpiValue: {
-    color: '#0f172a',
+    color: Colors.textPrimary,
     fontSize: 22,
     fontWeight: '800',
   },
   card: {
     padding: 16,
     borderRadius: 14,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#dbe3ef',
+    borderColor: Colors.borderLight,
     gap: 10,
-    shadowColor: '#0f172a',
+    shadowColor: Colors.textPrimary,
     shadowOpacity: 0.08,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   cardTitle: {
-    color: '#1e293b',
+    color: Colors.textPrimary,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -188,7 +189,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   taskTitle: {
-    color: '#0f172a',
+    color: Colors.textPrimary,
     fontSize: 15,
     fontWeight: '500',
     flex: 1,
@@ -196,25 +197,25 @@ const styles = StyleSheet.create({
   taskPriority: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#334155',
+    color: Colors.textSecondary,
   },
   bigValue: {
-    color: '#0f172a',
+    color: Colors.textPrimary,
     fontSize: 18,
     fontWeight: '700',
   },
   progressTrack: {
     height: 10,
     borderRadius: 999,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: Colors.textHint,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#10b981',
+    backgroundColor: Colors.success,
   },
   mutedText: {
-    color: '#64748b',
+    color: Colors.textHint,
     fontSize: 13,
   },
 });

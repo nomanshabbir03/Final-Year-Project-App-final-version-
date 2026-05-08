@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 
+import { Colors } from '../constants/theme';
 import { TaskRow } from '../components/TaskRow';
 import { useAppContext } from '../context/AppContext';
 import type { RootStackParamList } from '../navigation/types';
@@ -189,8 +190,8 @@ export function TasksScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Tasks</Text>
-        <Text style={styles.subtitle}>Tap a task to mark complete</Text>
+        <Text style={styles.title}>Task Manager</Text>
+        <Text style={styles.subtitle}>Manage, organize, and track your daily tasks with voice commands and priority levels.</Text>
       </View>
 
       <FlatList
@@ -265,7 +266,7 @@ export function TasksScreen() {
 
       {tasksLoading && tasks.length > 0 ? (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color="#1d4ed8" />
+          <ActivityIndicator size="small" color={Colors.primary} />
         </View>
       ) : null}
 
@@ -279,7 +280,7 @@ export function TasksScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#eef2f7',
+    backgroundColor: Colors.bgLight,
   },
   header: {
     paddingHorizontal: 16,
@@ -290,11 +291,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.primary,
   },
   subtitle: {
     fontSize: 14,
-    color: '#475569',
+    color: Colors.textSecondary,
   },
   listContent: {
     padding: 16,
@@ -303,7 +304,7 @@ const styles = StyleSheet.create({
   empty: {
     textAlign: 'center',
     marginTop: 18,
-    color: '#64748b',
+    color: Colors.textHint,
   },
   voiceHeaderRow: {
     flexDirection: 'row',
@@ -314,107 +315,107 @@ const styles = StyleSheet.create({
   voiceTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#1e293b',
+    color: Colors.textPrimary,
   },
   micButton: {
-    backgroundColor: '#e0e7ff',
+    backgroundColor: Colors.primarySurface,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   micButtonText: {
-    color: '#3730a3',
+    color: Colors.accentBlue,
     fontWeight: '700',
     fontSize: 12,
   },
   voiceCard: {
     borderWidth: 1,
-    borderColor: '#c7d2fe',
+    borderColor: Colors.primaryLight,
     borderRadius: 14,
     padding: 12,
-    backgroundColor: '#eef2ff',
+    backgroundColor: Colors.primarySurface,
     marginBottom: 12,
     gap: 8,
   },
   voiceHint: {
     fontSize: 12,
-    color: '#475569',
+    color: Colors.textSecondary,
   },
   voiceHintWarning: {
     fontSize: 12,
-    color: '#92400e',
-    backgroundColor: '#fef3c7',
+    color: Colors.warning,
+    backgroundColor: Colors.accentAmber,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 6,
   },
   voiceInput: {
     borderWidth: 1,
-    borderColor: '#bfdbfe',
+    borderColor: Colors.primaryLight,
     borderRadius: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     height: 42,
     paddingHorizontal: 10,
   },
   voiceActionButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#2563eb',
+    backgroundColor: Colors.accentBlue,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   voiceActionButtonStop: {
-    backgroundColor: '#b91c1c',
+    backgroundColor: Colors.error,
   },
   voiceActionText: {
-    color: '#ffffff',
+    color: Colors.white,
     fontWeight: '700',
     fontSize: 12,
   },
   voiceError: {
-    color: '#b91c1c',
+    color: Colors.error,
     fontWeight: '600',
     fontSize: 12,
   },
   voiceSuccess: {
-    color: '#166534',
+    color: Colors.success,
     fontWeight: '600',
     fontSize: 12,
   },
   errorBox: {
-    backgroundColor: '#fff1f2',
+    backgroundColor: Colors.primaryLight,
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
     gap: 8,
     borderWidth: 1,
-    borderColor: '#fecdd3',
+    borderColor: Colors.primaryLight,
   },
   errorText: {
-    color: '#b91c1c',
+    color: Colors.error,
     fontWeight: '600',
   },
   retryButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#fecaca',
+    backgroundColor: Colors.primaryLight,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
   },
   retryText: {
-    color: '#7f1d1d',
+    color: Colors.textPrimary,
     fontWeight: '700',
   },
   loadingOverlay: {
     position: 'absolute',
     top: 18,
     right: 20,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#dbeafe',
+    borderColor: Colors.primaryLight,
   },
   fab: {
     position: 'absolute',
@@ -423,17 +424,17 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 4,
-    shadowColor: '#1d4ed8',
+    shadowColor: Colors.primary,
     shadowOpacity: 0.3,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 4 },
   },
   fabText: {
-    color: '#ffffff',
+    color: Colors.white,
     fontSize: 28,
     lineHeight: 30,
     fontWeight: '600',

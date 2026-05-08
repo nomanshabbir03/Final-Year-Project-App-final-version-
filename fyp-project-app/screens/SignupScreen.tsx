@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 
+import { Colors } from '../constants/theme';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
@@ -92,35 +93,35 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    color: '#334155',
+    color: Colors.textSecondary,
     fontWeight: '600',
   },
   input: {
     height: 44,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: Colors.borderLight,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     paddingHorizontal: 12,
   },
   error: {
-    color: '#b91c1c',
+    color: Colors.error,
     fontWeight: '600',
   },
   primaryButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: Colors.primary,
     borderRadius: 10,
     height: 46,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: Colors.white,
     fontWeight: '700',
   },
   secondaryText: {
     textAlign: 'center',
-    color: '#1d4ed8',
+    color: Colors.primary,
     fontWeight: '600',
   },
 });

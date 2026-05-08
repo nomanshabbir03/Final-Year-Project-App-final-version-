@@ -12,6 +12,7 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppContext } from '../context/AppContext';
+import { Colors } from '../constants/theme';
 
 type HabitFrequency = 'Daily' | 'Weekly';
 
@@ -50,8 +51,8 @@ export function HabitsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Habits</Text>
-        <Text style={styles.subtitle}>Track habits synced with backend streak logic.</Text>
+        <Text style={styles.title}>Habit Tracker</Text>
+        <Text style={styles.subtitle}>Build and track daily habits with streak tracking and progress analytics.</Text>
       </View>
 
       <View style={styles.formCard}>
@@ -112,7 +113,7 @@ export function HabitsScreen() {
 
       {habitsLoading && habits.length > 0 ? (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color="#1d4ed8" />
+          <ActivityIndicator size="small" color={Colors.primary} />
         </View>
       ) : null}
     </SafeAreaView>
@@ -130,7 +131,7 @@ function formatDate(date: Date) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#eef2f7',
+    backgroundColor: Colors.bgLight,
   },
   header: {
     paddingHorizontal: 16,
@@ -141,43 +142,43 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.primary,
   },
   subtitle: {
     fontSize: 14,
-    color: '#475569',
+    color: Colors.textSecondary,
     paddingHorizontal: 16,
   },
   formCard: {
     marginHorizontal: 16,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#dbe3ef',
+    borderColor: Colors.borderLight,
     padding: 12,
     gap: 8,
   },
   label: {
-    color: '#334155',
+    color: Colors.textSecondary,
     fontWeight: '600',
     fontSize: 13,
   },
   input: {
     height: 42,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: Colors.borderLight,
     borderRadius: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     paddingHorizontal: 10,
   },
   pickerWrap: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: Colors.borderLight,
     borderRadius: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
   },
   addButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: Colors.primary,
     borderRadius: 8,
     height: 42,
     alignItems: 'center',
@@ -185,11 +186,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   addButtonText: {
-    color: '#ffffff',
+    color: Colors.white,
     fontWeight: '700',
   },
   errorText: {
-    color: '#b91c1c',
+    color: Colors.error,
     fontWeight: '600',
     marginTop: 4,
   },
@@ -199,17 +200,17 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: 'center',
-    color: '#64748b',
+    color: Colors.textHint,
     marginTop: 14,
   },
   habitCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#dbe3ef',
+    borderColor: Colors.borderLight,
     padding: 12,
     gap: 6,
-    shadowColor: '#0f172a',
+    shadowColor: Colors.textPrimary,
     shadowOpacity: 0.06,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
@@ -218,25 +219,25 @@ const styles = StyleSheet.create({
   habitName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.textPrimary,
   },
   meta: {
     fontSize: 13,
-    color: '#475569',
+    color: Colors.textSecondary,
   },
   completeButton: {
     alignSelf: 'flex-start',
     marginTop: 4,
-    backgroundColor: '#16a34a',
+    backgroundColor: Colors.success,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   completeButtonDisabled: {
-    backgroundColor: '#86efac',
+    backgroundColor: Colors.primaryLight,
   },
   completeButtonText: {
-    color: '#ffffff',
+    color: Colors.white,
     fontWeight: '700',
     fontSize: 12,
   },

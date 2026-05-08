@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Location from 'expo-location';
 
+import { Colors } from '../constants/theme';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -208,16 +209,14 @@ export function WeatherScreen() {
     return () => clearInterval(intervalId);
   }, [savedLocations, weather?.city]);
 
-  const isNight = new Date().getHours() >= 19 || new Date().getHours() < 6;
-  const theme = getWeatherTheme(weather?.condition, isNight);
   const minText = weather && Number.isFinite(weather.minC) ? `${Math.round(weather.minC)}°C` : '--';
   const maxText = weather && Number.isFinite(weather.maxC) ? `${Math.round(weather.maxC)}°C` : '--';
 
   return (
     <ScreenContainer
-      title="Weather"
-      subtitle="Search by city, save favorites, and keep them auto-updated."
-      safeAreaStyle={{ backgroundColor: theme.screenBackground }}
+      title="Weather Forecast"
+      subtitle="Get real-time weather updates, save favorite locations, and track weather conditions across multiple cities."
+      safeAreaStyle={{ backgroundColor: Colors.bgLight }}
       contentContainerStyle={{ gap: 12 }}>
       <View style={styles.searchRow}>
         <TextInput
@@ -240,11 +239,11 @@ export function WeatherScreen() {
         <Text style={styles.locationButtonText}>Use Device Location</Text>
       </Pressable>
 
-      {loading ? <ActivityIndicator size="large" color="#1d4ed8" /> : null}
+      {loading ? <ActivityIndicator size="large" color={Colors.primary} /> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
-      <View style={[styles.card, { backgroundColor: theme.cardBackground }]}>
+      <View style={styles.card}>
         <Text style={styles.city}>{weather?.city ?? 'No data yet'}</Text>
         <Text style={styles.temp}>{weather ? `${weather.temperatureC}°C` : '--'}</Text>
         <Text style={styles.condition}>{weather?.condition ?? 'Search city or use location'}</Text>
@@ -253,7 +252,7 @@ export function WeatherScreen() {
         <Text style={styles.time}>Updated: {weather?.updatedAt ?? '--'}</Text>
       </View>
 
-      <View style={[styles.card, { backgroundColor: theme.cardBackground }]}>
+      <View style={styles.card}>
         <Text style={styles.savedTitle}>Saved Locations</Text>
         {savedLocations.length === 0 ? (
           <Text style={styles.time}>No saved locations yet.</Text>
@@ -289,56 +288,6 @@ export function WeatherScreen() {
   );
 }
 
-function getWeatherTheme(condition?: string, isNight?: boolean) {
-  const value = (condition || '').toLowerCase();
-
-  if (value.includes('storm') || value.includes('thunder')) {
-    return {
-      screenBackground: '#dbeafe',
-      cardBackground: '#eff6ff',
-    };
-  }
-
-  if (value.includes('rain') || value.includes('drizzle')) {
-    return {
-      screenBackground: '#dbeafe',
-      cardBackground: '#e0f2fe',
-    };
-  }
-
-  if (value.includes('snow')) {
-    return {
-      screenBackground: '#e0f2fe',
-      cardBackground: '#f0f9ff',
-    };
-  }
-
-  if (value.includes('cloud')) {
-    return {
-      screenBackground: '#e2e8f0',
-      cardBackground: '#f1f5f9',
-    };
-  }
-
-  if (isNight) {
-    return {
-      screenBackground: '#dbe4ff',
-      cardBackground: '#eef2ff',
-    };
-  }
-
-  if (value.includes('clear') || value.includes('sun')) {
-    return {
-      screenBackground: '#fef3c7',
-      cardBackground: '#fffbeb',
-    };
-  }
-
-  return {
-    screenBackground: '#f1f5f9',
-    cardBackground: '#ffffff',
-  };
-}
 
 const styles = StyleSheet.create({
   searchRow: {
@@ -349,13 +298,13 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderWidth: 1,
-    borderColor: '#d1d9e6',
+    borderColor: Colors.borderLight,
     borderRadius: 10,
     paddingHorizontal: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
   },
   button: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: Colors.primary,
     borderRadius: 10,
     height: 44,
     justifyContent: 'center',
@@ -363,39 +312,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   buttonText: {
-    color: '#ffffff',
+    color: Colors.white,
     fontWeight: '700',
   },
   locationButton: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: Colors.primary,
     borderRadius: 10,
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#eff6ff',
+    backgroundColor: Colors.primarySurface,
   },
   locationButtonText: {
-    color: '#1d4ed8',
+    color: Colors.primary,
     fontWeight: '700',
   },
   saveLocationButton: {
     borderWidth: 1,
-    borderColor: '#0f766e',
+    borderColor: Colors.accentTeal,
     borderRadius: 10,
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#ccfbf1',
+    backgroundColor: Colors.primarySurface,
   },
   card: {
     padding: 14,
     borderRadius: 14,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#dbe3ef',
+    borderColor: Colors.borderLight,
     gap: 6,
-    shadowColor: '#0f172a',
+    shadowColor: Colors.textPrimary,
     shadowOpacity: 0.06,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
@@ -404,36 +353,36 @@ const styles = StyleSheet.create({
   city: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.textPrimary,
   },
   temp: {
     fontSize: 36,
     fontWeight: '800',
-    color: '#0f172a',
+    color: Colors.textPrimary,
   },
   condition: {
     fontSize: 16,
-    color: '#334155',
+    color: Colors.textSecondary,
   },
   minMax: {
     fontSize: 14,
-    color: '#334155',
+    color: Colors.textSecondary,
     fontWeight: '600',
   },
   time: {
     fontSize: 12,
-    color: '#64748b',
+    color: Colors.textHint,
   },
   error: {
-    color: '#dc2626',
+    color: Colors.error,
     fontWeight: '600',
   },
   notice: {
-    color: '#065f46',
+    color: Colors.success,
     fontWeight: '600',
-    backgroundColor: '#d1fae5',
+    backgroundColor: Colors.primarySurface,
     borderWidth: 1,
-    borderColor: '#6ee7b7',
+    borderColor: Colors.primaryLight,
     borderRadius: 10,
     paddingVertical: 8,
     paddingHorizontal: 10,
@@ -441,23 +390,23 @@ const styles = StyleSheet.create({
   savedTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.textPrimary,
   },
   savedRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: Colors.borderLight,
     paddingVertical: 8,
   },
   savedCity: {
     fontSize: 14,
-    color: '#1e293b',
+    color: Colors.textPrimary,
     fontWeight: '600',
   },
   deleteText: {
-    color: '#b91c1c',
+    color: Colors.error,
     fontWeight: '600',
   },
   savedActions: {
@@ -467,12 +416,12 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   refreshText: {
-    color: '#1d4ed8',
+    color: Colors.primary,
     fontWeight: '600',
   },
   savedMeta: {
     fontSize: 12,
-    color: '#334155',
+    color: Colors.textSecondary,
     fontWeight: '600',
   },
 });

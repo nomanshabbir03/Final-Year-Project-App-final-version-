@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
+import { Colors } from '../constants/theme';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { useAuth } from '../context/AuthContext';
 
@@ -87,7 +88,7 @@ export function ProfileScreen() {
   const avatarPreviewUri = avatarImageUri || avatarUrl;
 
   return (
-    <ScreenContainer title="Profile" subtitle="Manage your account details.">
+    <ScreenContainer title="Profile Settings" subtitle="Manage your personal information, avatar, and account preferences.">
       <View style={styles.card}>
         {avatarPreviewUri ? <Image source={{ uri: avatarPreviewUri }} style={styles.avatar} /> : null}
         <Pressable style={styles.uploadButton} onPress={pickImage}>
@@ -137,12 +138,12 @@ const styles = StyleSheet.create({
   card: {
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#ffffff',
-    borderColor: '#dbe3ef',
+    backgroundColor: Colors.surfaceLight,
+    borderColor: Colors.borderLight,
     borderWidth: 1,
     borderRadius: 14,
     padding: 16,
-    shadowColor: '#0f172a',
+    shadowColor: Colors.textPrimary,
     shadowOpacity: 0.06,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
@@ -152,30 +153,30 @@ const styles = StyleSheet.create({
     width: 84,
     height: 84,
     borderRadius: 42,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: Colors.textHint,
   },
   email: {
-    color: '#334155',
+    color: Colors.textSecondary,
     fontWeight: '600',
   },
   uploadButton: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
-    backgroundColor: '#eff6ff',
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primarySurface,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   uploadButtonText: {
-    color: '#1d4ed8',
+    color: Colors.primary,
     fontWeight: '700',
     fontSize: 12,
   },
   pendingUpload: {
-    color: '#92400e',
+    color: Colors.warning,
     fontWeight: '600',
     fontSize: 12,
-    backgroundColor: '#fef3c7',
+    backgroundColor: Colors.accentAmber,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -184,15 +185,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   label: {
-    color: '#334155',
+    color: Colors.textSecondary,
     fontWeight: '600',
   },
   input: {
     height: 44,
     borderWidth: 1,
-    borderColor: '#d1d9e6',
+    borderColor: Colors.borderLight,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     paddingHorizontal: 12,
   },
   textarea: {
@@ -201,22 +202,22 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   error: {
-    color: '#b91c1c',
+    color: Colors.error,
     fontWeight: '600',
   },
   success: {
-    color: '#166534',
+    color: Colors.success,
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: Colors.primary,
     borderRadius: 10,
     height: 46,
     alignItems: 'center',
     justifyContent: 'center',
   },
   saveText: {
-    color: '#ffffff',
+    color: Colors.white,
     fontWeight: '700',
   },
 });
