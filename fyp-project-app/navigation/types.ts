@@ -3,6 +3,9 @@ export type RootStackParamList = {
   Signup: undefined;
   MainTabs: undefined;
   AddTask: undefined;
+  AddHabit: undefined;
+  AllHabits: undefined;
+  HabitAnalytics: undefined;
 };
 
 export type MainTabParamList = {

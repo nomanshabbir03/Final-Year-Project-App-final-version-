@@ -2,8 +2,11 @@ import React, { createContext, useCallback, useContext, useMemo, useRef, useStat
 import {
   completeHabit as completeHabitRequest,
   createHabit as createHabitRequest,
+  deleteHabit as deleteHabitRequest,
   getHabits as getHabitsRequest,
+  updateHabit as updateHabitRequest,
   type HabitFrequency,
+  type HabitCategory,
 } from '../services/habitService';
 import { toApiErrorMessage } from '../services/api';
 import {
@@ -25,8 +28,11 @@ export type Habit = {
   id: string;
   name: string;
   frequency: HabitFrequency;
+  category: HabitCategory;
   streakCount: number;
+  bestStreak: number;
   lastCompletedDate: string | null;
+  reminderTime: string | null;
 };
 
 type WeatherSnapshot = {
@@ -53,7 +59,9 @@ type AppContextValue = {
     priority: Task['priority'];
     deadline: string;
   }) => Promise<boolean>;
-  addHabit: (input: { name: string; frequency: HabitFrequency }) => Promise<boolean>;
+  addHabit: (input: { name: string; frequency: HabitFrequency; category: HabitCategory }) => Promise<boolean>;
+  updateHabit: (id: string, name: string, frequency: HabitFrequency, reminderTime?: string) => Promise<boolean>;
+  deleteHabit: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   toggleTask: (id: string) => void;
   completeHabit: (id: string) => Promise<void>;
@@ -177,7 +185,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fetchTasks]);
 
-  const addHabit = useCallback(async (input: { name: string; frequency: HabitFrequency }) => {
+  const addHabit = useCallback(async (input: { name: string; frequency: HabitFrequency; category: HabitCategory }) => {
     const clean = input.name.trim();
     if (!clean) {
       setHabitsError('Habit name is required.');
@@ -191,6 +199,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const created = await createHabitRequest({
         name: clean,
         frequency: input.frequency,
+        category: input.category,
       });
       setHabits((prev) => [created, ...prev]);
       await fetchHabits(true);
@@ -240,6 +249,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const updateHabit = useCallback(async (id: string, name: string, frequency: HabitFrequency, reminderTime?: string) => {
+    setHabitsLoading(true);
+    setHabitsError(null);
+
+    try {
+      const updated = await updateHabitRequest(id, name, frequency, reminderTime);
+      setHabits((prev) => prev.map((habit) => (habit.id === id ? updated : habit)));
+      return true;
+    } catch (error) {
+      console.warn('Failed to update habit in backend', error);
+      setHabitsError(toApiErrorMessage(error, 'Could not update habit. Please try again.'));
+      return false;
+    } finally {
+      setHabitsLoading(false);
+    }
+  }, []);
+
+  const deleteHabit = useCallback(async (id: string) => {
+    setHabitsLoading(true);
+    setHabitsError(null);
+
+    try {
+      await deleteHabitRequest(id);
+      setHabits((prev) => prev.filter((habit) => habit.id !== id));
+    } catch (error) {
+      console.warn('Failed to delete habit in backend', error);
+      setHabitsError(toApiErrorMessage(error, 'Could not delete habit. Please try again.'));
+    } finally {
+      setHabitsLoading(false);
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       tasks,
@@ -254,6 +295,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       preloadDashboardData,
       addTask,
       addHabit,
+      updateHabit,
+      deleteHabit,
       deleteTask,
       toggleTask,
       completeHabit,
@@ -272,6 +315,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       preloadDashboardData,
       addTask,
       addHabit,
+      updateHabit,
+      deleteHabit,
       deleteTask,
       toggleTask,
       completeHabit,

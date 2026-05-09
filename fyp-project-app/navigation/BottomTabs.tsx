@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { MainTabParamList } from './types';
 import { HomeScreen } from '../screens/HomeScreen';
@@ -20,6 +21,8 @@ const tabIconMap: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap>
 };
 
 export function BottomTabs() {
+  const insets = useSafeAreaInsets();
+  
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -39,11 +42,11 @@ export function BottomTabs() {
         tabBarActiveTintColor: '#1d4ed8',
         tabBarInactiveTintColor: '#64748b',
         tabBarStyle: {
-          height: 64,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+          paddingTop: 4,
+          height: 60 + (insets.bottom > 0 ? insets.bottom : 0),
           borderTopColor: '#e2e8f0',
           borderTopWidth: 1,
-          paddingTop: 8,
-          paddingBottom: 8,
           backgroundColor: '#ffffff',
         },
         tabBarLabelStyle: {
@@ -57,9 +60,9 @@ export function BottomTabs() {
       })}>
       <Tab.Screen name="Dashboard" component={HomeScreen} />
       <Tab.Screen name="Tasks" component={TasksScreen} />
-      <Tab.Screen name="Habits" component={HabitsScreen} />
+      <Tab.Screen name="Habits" component={HabitsScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Weather" component={WeatherScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );
 }

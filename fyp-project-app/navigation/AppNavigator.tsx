@@ -6,6 +6,9 @@ import { ActivityIndicator, View } from 'react-native';
 import { BottomTabs } from './BottomTabs';
 import type { RootStackParamList } from './types';
 import { AddTaskScreen } from '../screens/AddTaskScreen';
+import { AddHabitScreen } from '../screens/AddHabitScreen';
+import { AllHabitsScreen } from '../screens/AllHabitsScreen';
+import { HabitAnalyticsScreen } from '../screens/HabitAnalyticsScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { SignupScreen } from '../screens/SignupScreen';
 import { useAuth } from '../context/AuthContext';
@@ -50,6 +53,9 @@ export function AppNavigator() {
               options={{ headerShown: false }}
             />
             <Stack.Screen name="AddTask" component={AddTaskScreen} options={{ title: 'Add Task' }} />
+            <Stack.Screen name="AddHabit" component={AddHabitScreen} options={{ title: 'Add Habit' }} />
+            <Stack.Screen name="AllHabits" component={AllHabitsScreen} options={{ title: 'All Habits' }} />
+            <Stack.Screen name="HabitAnalytics" component={HabitAnalyticsScreen} options={{ headerShown: false }} />
           </>
         ) : (
           <>
