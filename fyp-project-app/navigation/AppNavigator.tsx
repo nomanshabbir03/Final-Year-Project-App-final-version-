@@ -8,6 +8,7 @@ import type { RootStackParamList } from './types';
 import { AddTaskScreen } from '../screens/AddTaskScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { SignupScreen } from '../screens/SignupScreen';
+import { ConfirmCodeScreen } from '../screens/ConfirmCodeScreen';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 
@@ -55,6 +56,7 @@ export function AppNavigator() {
           <>
             <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Signup" component={SignupScreen} options={{ title: 'Create Account' }} />
+            <Stack.Screen name="Confirm" component={ConfirmCodeScreen} options={{ title: 'Confirm' }} />
           </>
         )}
       </Stack.Navigator>

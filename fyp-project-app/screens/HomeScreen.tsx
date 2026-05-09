@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { Colors } from '../constants/theme';
+import { fetchWeatherByCity } from '../services/weatherService';
 
 export function HomeScreen() {
-  const { tasks, habits, weather } = useAppContext();
+  const { tasks, habits, weather, setWeather } = useAppContext();
   const { user, logout } = useAuth();
+  const weatherFetchRef = useRef<{ city: string; at: number } | null>(null);
   const today = new Date().toISOString().split('T')[0];
   const todaysTasks = tasks.filter((task) => task.deadline === today).slice(0, 3);
   const openTasks = tasks.filter((task) => !task.done).length;
@@ -16,6 +18,51 @@ export function HomeScreen() {
   const habitProgressPercent = habits.length
     ? Math.round((completedHabitsToday / habits.length) * 100)
     : 0;
+
+  useEffect(() => {
+    const selectedCity = user?.selectedCity?.trim() || 'London';
+    if (!selectedCity) {
+      return;
+    }
+
+    const cityKey = selectedCity.toLowerCase();
+    const lastFetch = weatherFetchRef.current;
+    if (lastFetch && lastFetch.city === cityKey && Date.now() - lastFetch.at < 10 * 60 * 1000) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const snapshot = await fetchWeatherByCity(selectedCity);
+        if (cancelled) {
+          return;
+        }
+
+        setWeather({
+          city: snapshot.city || selectedCity,
+          temperatureC: snapshot.temperatureC,
+          condition: snapshot.condition,
+          updatedAt: snapshot.updatedAt,
+        });
+        weatherFetchRef.current = { city: cityKey, at: Date.now() };
+      } catch (error) {
+        console.warn('Failed to fetch weather for dashboard', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setWeather, user?.selectedCity]);
+
+  const formatTemp = (value: number | undefined, suffix = '°C') =>
+    Number.isFinite(value) ? `${Number(value).toFixed(0)}${suffix}` : '--';
+
+  const isNight = isNightNow();
+  const displayCondition =
+    weather?.condition === 'Sunny' && isNight ? 'Clear' : weather?.condition;
+  const weatherEmoji = resolveHomeWeatherEmoji(displayCondition, isNight);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.contentContainer}>
@@ -44,7 +91,9 @@ export function HomeScreen() {
         </View>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>Weather</Text>
-          <Text style={styles.kpiValue}>{weather ? `${weather.temperatureC}°` : '--'}</Text>
+          <Text style={styles.kpiValue}>
+            {weatherEmoji ? `${weatherEmoji} ` : ''}{formatTemp(weather?.temperatureC, '°')}
+          </Text>
         </View>
       </View>
 
@@ -78,13 +127,46 @@ export function HomeScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Current Weather Snapshot</Text>
         <Text style={styles.bigValue}>
-          {weather ? `${weather.temperatureC}°C - ${weather.condition}` : 'Tap Weather tab to load data'}
+          {weather ? `${weatherEmoji ? `${weatherEmoji} ` : ''}${formatTemp(weather.temperatureC)} - ${displayCondition}` : 'Tap Weather tab to load data'}
         </Text>
         <Text style={styles.mutedText}>City: {weather?.city ?? '--'}</Text>
         <Text style={styles.mutedText}>Updated: {weather?.updatedAt ?? '--'}</Text>
       </View>
     </ScrollView>
   );
+}
+
+function resolveHomeWeatherEmoji(condition?: string, isNight?: boolean) {
+  const normalized = (condition || '').toLowerCase();
+  if (normalized.includes('sunny') || normalized.includes('clear')) {
+    return isNight ? '🌙' : '🌞';
+  }
+  if (normalized.includes('cloud')) {
+    return '🌥️';
+  }
+  if (normalized.includes('rain')) {
+    return '🌧️';
+  }
+  if (normalized.includes('storm')) {
+    return '⛈️';
+  }
+  if (normalized.includes('snow')) {
+    return '🌨️';
+  }
+  if (normalized.includes('hazy') || normalized.includes('smoke') || normalized.includes('mist')) {
+    return '😶‍🌫️';
+  }
+
+  return '';
+}
+
+function isNightNow() {
+  try {
+    const hour = new Date().getHours();
+    return hour < 6 || hour >= 19;
+  } catch {
+    return false;
+  }
 }
 
 const styles = StyleSheet.create({

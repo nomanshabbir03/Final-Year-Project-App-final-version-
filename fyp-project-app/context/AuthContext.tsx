@@ -25,7 +25,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
-  signup: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  signup: (email: string, password: string, fullName?: string) => Promise<{ ok: boolean; error?: string }>;
   updateProfile: (input: {
     fullName?: string;
     avatarUrl?: string;
@@ -199,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signup = async (email: string, password: string) => {
+  const signup = async (email: string, password: string, fullName?: string) => {
     const cleanEmail = email.trim().toLowerCase();
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -211,7 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const payload = await signupRequest(cleanEmail, password);
+      const payload = await signupRequest(cleanEmail, password, fullName);
       const nextUser = {
         email: payload.email,
         token: payload.token,
