@@ -6,6 +6,10 @@ export type RootStackParamList = {
   AddHabit: undefined;
   AllHabits: undefined;
   HabitAnalytics: undefined;
+  Calendar: undefined;
+  Reports: undefined;
+  TaskDetail: { taskId: string };
+  ConfirmCode: { email?: string };
 };
 
 export type MainTabParamList = {

@@ -11,6 +11,10 @@ import { AllHabitsScreen } from '../screens/AllHabitsScreen';
 import { HabitAnalyticsScreen } from '../screens/HabitAnalyticsScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { SignupScreen } from '../screens/SignupScreen';
+import { CalendarScreen } from '../screens/CalendarScreen';
+import { ReportsScreen } from '../screens/ReportsScreen';
+import { TaskDetailScreen } from '../screens/TaskDetailScreen';
+import { ConfirmCodeScreen } from '../screens/ConfirmCodeScreen';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 
@@ -56,6 +60,10 @@ export function AppNavigator() {
             <Stack.Screen name="AddHabit" component={AddHabitScreen} options={{ title: 'Add Habit' }} />
             <Stack.Screen name="AllHabits" component={AllHabitsScreen} options={{ title: 'All Habits' }} />
             <Stack.Screen name="HabitAnalytics" component={HabitAnalyticsScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Calendar" component={CalendarScreen} options={{ title: 'Calendar' }} />
+            <Stack.Screen name="Reports" component={ReportsScreen} options={{ title: 'Reports' }} />
+            <Stack.Screen name="TaskDetail" component={TaskDetailScreen} options={{ title: 'Task Details' }} />
+            <Stack.Screen name="ConfirmCode" component={ConfirmCodeScreen} options={{ title: 'Confirm Code' }} />
           </>
         ) : (
           <>
