@@ -474,7 +474,7 @@ export function WeatherScreen() {
                 </Pressable>
               </View>
 
-              <Pressable style={styles.locationButton} onPress={loadByLocation} disabled={loading}>
+              <Pressable style={styles.locationButton} onPress={() => loadByLocation()} disabled={loading}>
                 <Text style={styles.locationButtonText}>Use Device Location</Text>
               </Pressable>
 

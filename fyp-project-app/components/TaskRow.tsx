@@ -12,7 +12,7 @@ type Props = {
 
 export function TaskRow({ task, onPress, onDelete }: Props) {
   const priorityColor =
-    task.priority === 'High' ? Colors.error : task.priority === 'Medium' ? Colors.warning : Colors.success;
+    task.priority === 'high' ? Colors.error : task.priority === 'medium' ? Colors.warning : Colors.success;
 
   return (
     <Pressable style={[styles.row, task.done && styles.rowDone]} onPress={onPress}>

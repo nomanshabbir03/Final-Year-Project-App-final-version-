@@ -29,6 +29,7 @@ class TaskSerializer(serializers.ModelSerializer):
 	attachments = TaskAttachmentSerializer(many=True, read_only=True)
 	time_spent_seconds = serializers.ReadOnlyField()
 	progress_percentage = serializers.ReadOnlyField()
+	deadline = serializers.DateField(required=False, allow_null=True)
 	
 	class Meta:
 		model = Task

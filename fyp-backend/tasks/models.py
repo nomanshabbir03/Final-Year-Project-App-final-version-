@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 
 class TaskAttachment(models.Model):
@@ -57,7 +58,7 @@ class Task(models.Model):
 	time_spent = models.DurationField(null=True, blank=True)
 	progress_percentage = models.IntegerField(default=0)
 	email_reminder_enabled = models.BooleanField(default=False)
-	user_id = models.UUIDField(null=True, blank=True, db_index=True)
+	user = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
 	created_at = models.DateTimeField(auto_now_add=True)
 	updated_at = models.DateTimeField(auto_now=True)
 

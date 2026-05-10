@@ -127,6 +127,17 @@ class ProfileView(APIView):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
         return Response(_profile_payload(profile, request=request), status=status.HTTP_200_OK)
 
+    def patch(self, request):
+        serializer = ProfileSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        for field, value in serializer.validated_data.items():
+            setattr(profile, field, value)
+        profile.save(update_fields=list(serializer.validated_data.keys()))
+
+        return Response(_profile_payload(profile, request=request), status=status.HTTP_200_OK)
+
 
 class ForgotPasswordView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -185,14 +196,3 @@ class ResetPasswordView(APIView):
         entry.save(update_fields=['used'])
 
         return Response({'detail': 'Password reset successful.'}, status=status.HTTP_200_OK)
-
-    def patch(self, request):
-        serializer = ProfileSerializer(data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        for field, value in serializer.validated_data.items():
-            setattr(profile, field, value)
-        profile.save(update_fields=list(serializer.validated_data.keys()))
-
-        return Response(_profile_payload(profile, request=request), status=status.HTTP_200_OK)

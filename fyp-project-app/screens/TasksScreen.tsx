@@ -29,20 +29,21 @@ type Task = {
   id: string;
   title: string;
   description: string;
-  category: string;
+  category?: string;
   priority: 'high' | 'medium' | 'low';
   status: 'pending' | 'in_progress' | 'done';
-  deadline?: string;
-  reminder_time?: string;
-  time_slot_start?: string;
-  time_slot_end?: string;
-  links: string[];
-  time_spent_seconds: number;
-  progress_percentage: number;
-  email_reminder_enabled: boolean;
-  attachments: any[];
-  created_at: string;
-  updated_at: string;
+  deadline?: string | null | undefined;
+  done?: boolean;
+  reminder_time?: string | null;
+  time_slot_start?: string | null;
+  time_slot_end?: string | null;
+  links?: string[];
+  time_spent_seconds?: number;
+  progress_percentage?: number;
+  email_reminder_enabled?: boolean;
+  attachments?: any[];
+  created_at?: string;
+  updated_at?: string;
 };
 
 type FilterType = 'TODAY' | 'ALL';
@@ -57,13 +58,21 @@ export function TasksScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [reportData, setReportData] = useState<any>(null);
+  const [reportPeriod, setReportPeriod] = useState<string>('weekly');
 
   // New task form state
-  const [newTask, setNewTask] = useState({
+  const [newTask, setNewTask] = useState<{
+    title: string;
+    description: string;
+    priority: 'low' | 'medium' | 'high';
+    deadline: string | null | undefined;
+    email_reminder_enabled: boolean;
+  }>({
     title: '',
     description: '',
     priority: 'medium' as 'low' | 'medium' | 'high',
-    deadline: null,
+    deadline: undefined,
     email_reminder_enabled: false,
   });
 
@@ -161,7 +170,7 @@ export function TasksScreen() {
               onPress={() => handleStatusChange(task)}
             >
               <Text style={styles.actionButtonText}>
-                {task.status === 'pending' ? '⏳' : task.status === 'in_progress' ? '🔄' : '✅'}
+                {task.email_reminder_enabled === true ? '🔔' : ''}{task.status === 'pending' ? '⏳' : task.status === 'in_progress' ? '🔄' : '✅'}
               </Text>
             </Pressable>
             <Pressable 
@@ -175,8 +184,8 @@ export function TasksScreen() {
         
         <View style={styles.taskMeta}>
           <Text style={styles.taskCategory}>{task.category}</Text>
-          <Text style={styles.taskTime}>⏱ {Math.floor(task.time_spent_seconds / 3600)}h {Math.floor((task.time_spent_seconds % 3600) / 60)}m tracked</Text>
-          {task.attachments?.length > 0 && (
+          <Text style={styles.taskTime}>⏱ {Math.floor((task.time_spent_seconds || 0) / 3600)}h {Math.floor(((task.time_spent_seconds || 0) % 3600) / 60)}m tracked</Text>
+          {task.attachments && task.attachments.length > 0 && (
             <Text style={styles.taskAttachments}>📎 {task.attachments.length}</Text>
           )}
           {task.deadline && (
@@ -185,7 +194,7 @@ export function TasksScreen() {
         </View>
         
         <View style={[styles.progressBar, { backgroundColor: priorityColor }]}>
-          <View style={[styles.progressFill, { width: `${task.progress_percentage}%` }]} />
+          <View style={[styles.progressFill, { width: `${(task.progress_percentage || 0)}%` }]} />
         </View>
       </Pressable>
     );
@@ -213,7 +222,7 @@ export function TasksScreen() {
       description: task.description || '',
       priority: task.priority,
       deadline: task.deadline || null,
-      email_reminder_enabled: task.email_reminder_enabled,
+      email_reminder_enabled: task.email_reminder_enabled === true ? true : false,
     });
     setShowCreateModal(true);
   };
@@ -258,7 +267,7 @@ export function TasksScreen() {
           style: 'destructive',
           onPress: async () => {
             const ok = await deleteTask(task.id);
-            if (ok) {
+            if (ok !== undefined && ok) {
               await fetchTasks(true);
             }
           }
@@ -284,7 +293,12 @@ export function TasksScreen() {
       email_reminder_enabled: newTask.email_reminder_enabled,
     };
 
-    const ok = await addTask(taskData);
+    const ok = await addTask({
+      title: newTask.title,
+      description: newTask.description,
+      priority: newTask.priority,
+      deadline: newTask.deadline || '',
+    });
     
     // Hide processing state and close modal
     setIsSaving(false);
@@ -551,7 +565,7 @@ export function TasksScreen() {
                         setShowDatePicker(false);
                       }}
                       markedDates={{
-                        [newTask.deadline]: { selected: true, selectedColor: Colors.primary, selectedTextColor: '#FFFFFF' }
+                        [newTask.deadline || '']: { selected: true, selectedColor: Colors.primary, selectedTextColor: '#FFFFFF' }
                       }}
                       theme={{
                         backgroundColor: Colors.surfaceLight,
@@ -779,7 +793,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   deleteButton: {
-    backgroundColor: Colors.errorLight || '#ffebee',
+    backgroundColor: Colors.error + '20' || '#ffebee',
     borderColor: Colors.error || '#f44336',
   },
   actionButtonText: {
@@ -924,10 +938,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(255,255,255,0.8)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1000,
   },
   loadingContent: {
     backgroundColor: Colors.surfaceLight,
@@ -1022,11 +1035,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 16,
   },
-  progressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
   progressLabel: {
     flex: 1,
     fontSize: 14,
@@ -1038,7 +1046,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   errorBox: {
-    backgroundColor: Colors.errorLight,
+    backgroundColor: '#ffebee', // Colors.errorLight doesn't exist
     borderRadius: 12,
     padding: 16,
     margin: 16,
@@ -1062,16 +1070,6 @@ const styles = StyleSheet.create({
   retryText: {
     color: Colors.white,
     fontWeight: '600',
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   // Form styles
   cardGroup: {
@@ -1269,10 +1267,6 @@ const styles = StyleSheet.create({
     fontSize: width * 0.04,
     color: Colors.textSecondary,
     fontWeight: '600',
-  },
-  calendar: {
-    borderRadius: width * 0.04,
-    overflow: 'hidden',
   },
   datePickerButton: {
     backgroundColor: Colors.primary,

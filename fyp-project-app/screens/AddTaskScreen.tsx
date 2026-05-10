@@ -18,7 +18,7 @@ export function AddTaskScreen() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
+  const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [deadlineDate, setDeadlineDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -62,9 +62,9 @@ export function AddTaskScreen() {
         <Text style={styles.label}>Priority</Text>
         <View style={styles.pickerWrap}>
           <Picker selectedValue={priority} onValueChange={(v) => setPriority(v)}>
-            <Picker.Item label="Low" value="Low" />
-            <Picker.Item label="Medium" value="Medium" />
-            <Picker.Item label="High" value="High" />
+            <Picker.Item label="Low" value="low" />
+            <Picker.Item label="Medium" value="medium" />
+            <Picker.Item label="High" value="high" />
           </Picker>
         </View>
       </View>
