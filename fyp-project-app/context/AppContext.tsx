@@ -10,15 +10,35 @@ import {
   createTask as createTaskRequest,
   deleteTask as deleteTaskRequest,
   getTasks as getTasksRequest,
+  getTask as getTaskRequest,
+  updateTask as updateTaskRequest,
+  logTime as logTimeRequest,
+  sendReminderEmail as sendReminderEmailRequest,
+  getTaskReport as getTaskReportRequest,
+  searchTasks as searchTasksRequest,
+  getTasksByPriority as getTasksByPriorityRequest,
+  getTasksByStatus as getTasksByStatusRequest,
+  getTasksByCategory as getTasksByCategoryRequest,
 } from '../services/taskService';
 
 export type Task = {
   id: string;
   title: string;
   description: string;
-  priority: 'Low' | 'Medium' | 'High';
-  deadline: string;
-  done: boolean;
+  category: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'pending' | 'in_progress' | 'done';
+  deadline?: string | null;
+  reminder_time?: string | null;
+  time_slot_start?: string | null;
+  time_slot_end?: string | null;
+  links: string[];
+  time_spent_seconds: number;
+  progress_percentage: number;
+  email_reminder_enabled: boolean;
+  attachments: any[];
+  created_at: string;
+  updated_at: string;
 };
 
 export type Habit = {
@@ -58,6 +78,16 @@ type AppContextValue = {
   toggleTask: (id: string) => void;
   completeHabit: (id: string) => Promise<void>;
   setWeather: (value: WeatherSnapshot) => void;
+  // New task functions
+  getTask: (id: string) => Promise<Task>;
+  updateTask: (id: string, data: Partial<Task>) => Promise<Task>;
+  logTime: (taskId: string, seconds: number) => Promise<any>;
+  sendReminderEmail: (taskId: string) => Promise<any>;
+  getTaskReport: (period: 'daily' | 'weekly' | 'monthly') => Promise<any>;
+  searchTasks: (query: string, filters?: any) => Promise<Task[]>;
+  getTasksByPriority: (priority: string) => Promise<Task[]>;
+  getTasksByStatus: (status: string) => Promise<Task[]>;
+  getTasksByCategory: (category: string) => Promise<Task[]>;
 };
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -147,7 +177,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     title: string;
     description: string;
     priority: Task['priority'];
-    deadline: string;
+    deadline: string | null;
   }) => {
     const clean = input.title.trim();
     if (!clean) {
@@ -166,7 +196,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deadline: input.deadline,
       });
       setTasks((prev) => [created as Task, ...prev]);
-      await fetchTasks(true);
       return true;
     } catch (error) {
       console.warn('Failed to create task in backend', error);
@@ -240,6 +269,108 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // New task functions
+  const getTask = useCallback(async (id: string) => {
+    try {
+      const task = await getTaskRequest(id);
+      return task;
+    } catch (error) {
+      console.warn('Failed to get task from backend', error);
+      throw error;
+    }
+  }, []);
+
+  const updateTask = useCallback(async (id: string, data: Partial<Task>) => {
+    setTasksLoading(true);
+    setTasksError(null);
+
+    try {
+      const updated = await updateTaskRequest(id, data);
+      setTasks((prev) => prev.map((task) => (task.id === id ? updated : task)));
+      return updated;
+    } catch (error) {
+      console.warn('Failed to update task in backend', error);
+      setTasksError(toApiErrorMessage(error, 'Could not update task. Please try again.'));
+      throw error;
+    } finally {
+      setTasksLoading(false);
+    }
+  }, []);
+
+  const logTime = useCallback(async (taskId: string, seconds: number) => {
+    try {
+      const result = await logTimeRequest(taskId, seconds);
+      // Refresh tasks to get updated time
+      await fetchTasks(true);
+      return result;
+    } catch (error) {
+      console.warn('Failed to log time in backend', error);
+      setTasksError(toApiErrorMessage(error, 'Could not log time. Please try again.'));
+      throw error;
+    }
+  }, [fetchTasks]);
+
+  const sendReminderEmail = useCallback(async (taskId: string) => {
+    try {
+      const result = await sendReminderEmailRequest(taskId);
+      return result;
+    } catch (error) {
+      console.warn('Failed to send reminder email from backend', error);
+      setTasksError(toApiErrorMessage(error, 'Could not send reminder email. Please try again.'));
+      throw error;
+    }
+  }, []);
+
+  const getTaskReport = useCallback(async (period: 'daily' | 'weekly' | 'monthly') => {
+    try {
+      const report = await getTaskReportRequest(period);
+      return report;
+    } catch (error) {
+      console.warn('Failed to get task report from backend', error);
+      throw error;
+    }
+  }, []);
+
+  const searchTasks = useCallback(async (query: string, filters = {}) => {
+    try {
+      const tasks = await searchTasksRequest(query, filters);
+      return tasks;
+    } catch (error) {
+      console.warn('Failed to search tasks in backend', error);
+      throw error;
+    }
+  }, []);
+
+  const getTasksByPriority = useCallback(async (priority: string) => {
+    try {
+      const tasks = await getTasksByPriorityRequest(priority);
+      return tasks;
+    } catch (error) {
+      console.warn('Failed to get tasks by priority from backend', error);
+      throw error;
+    }
+  }, []);
+
+  const getTasksByStatus = useCallback(async (status: string) => {
+    try {
+      const tasks = await getTasksByStatusRequest(status);
+      return tasks;
+    } catch (error) {
+      console.warn('Failed to get tasks by status from backend', error);
+      throw error;
+    }
+  }, []);
+
+  const getTasksByCategory = useCallback(async (category: string) => {
+    try {
+      const tasks = await getTasksByCategoryRequest(category);
+      return tasks;
+    } catch (error) {
+      console.warn('Failed to get tasks by category from backend', error);
+      throw error;
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       tasks,
@@ -258,6 +389,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleTask,
       completeHabit,
       setWeather,
+      // New task functions
+      getTask,
+      updateTask,
+      logTime,
+      sendReminderEmail,
+      getTaskReport,
+      searchTasks,
+      getTasksByPriority,
+      getTasksByStatus,
+      getTasksByCategory,
     }),
     [
       tasks,
@@ -275,6 +416,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       deleteTask,
       toggleTask,
       completeHabit,
+      // New task functions
+      getTask,
+      updateTask,
+      logTime,
+      sendReminderEmail,
+      getTaskReport,
+      searchTasks,
+      getTasksByPriority,
+      getTasksByStatus,
+      getTasksByCategory,
     ]
   );
 
