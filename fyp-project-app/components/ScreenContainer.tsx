@@ -10,6 +10,7 @@ type Props = {
   children: React.ReactNode;
   safeAreaStyle?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  hideHeader?: boolean;
 };
 
 export function ScreenContainer({
@@ -18,14 +19,17 @@ export function ScreenContainer({
   children,
   safeAreaStyle,
   contentContainerStyle,
+  hideHeader,
 }: Props) {
   return (
     <SafeAreaView style={[styles.safeArea, safeAreaStyle]}>
       <ScrollView contentContainerStyle={[styles.contentContainer, contentContainerStyle]}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-        </View>
+        {hideHeader ? null : (
+          <View style={styles.header}>
+            <Text style={styles.title}>{title}</Text>
+            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          </View>
+        )}
         {children}
       </ScrollView>
     </SafeAreaView>

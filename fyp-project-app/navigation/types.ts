@@ -1,6 +1,7 @@
 export type RootStackParamList = {
   Login: undefined;
   Signup: undefined;
+  Confirm: { email?: string } | undefined;
   MainTabs: undefined;
   AddTask: undefined;
   AddHabit: undefined;

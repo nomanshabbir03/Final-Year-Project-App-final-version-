@@ -63,12 +63,12 @@ export function AppNavigator() {
             <Stack.Screen name="Calendar" component={CalendarScreen} options={{ title: 'Calendar' }} />
             <Stack.Screen name="Reports" component={ReportsScreen} options={{ title: 'Reports' }} />
             <Stack.Screen name="TaskDetail" component={TaskDetailScreen} options={{ title: 'Task Details' }} />
-            <Stack.Screen name="ConfirmCode" component={ConfirmCodeScreen} options={{ title: 'Confirm Code' }} />
           </>
         ) : (
           <>
             <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Signup" component={SignupScreen} options={{ title: 'Create Account' }} />
+            <Stack.Screen name="Confirm" component={ConfirmCodeScreen} options={{ title: 'Confirm' }} />
           </>
         )}
       </Stack.Navigator>
