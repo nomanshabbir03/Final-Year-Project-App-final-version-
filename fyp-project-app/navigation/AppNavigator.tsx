@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View } from 'react-native';
@@ -15,6 +16,7 @@ import { CalendarScreen } from '../screens/CalendarScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { TaskDetailScreen } from '../screens/TaskDetailScreen';
 import { ConfirmCodeScreen } from '../screens/ConfirmCodeScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 
@@ -31,6 +33,7 @@ const appTheme = {
 export function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
   const { preloadDashboardData } = useAppContext();
+  const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -38,7 +41,25 @@ export function AppNavigator() {
     }
   }, [isAuthenticated, preloadDashboardData]);
 
-  if (isLoading) {
+  useEffect(() => {
+    checkOnboardingStatus();
+  }, []);
+
+  const checkOnboardingStatus = async () => {
+    try {
+      const onboardingStatus = await AsyncStorage.getItem('onboarding_complete');
+      setIsOnboardingComplete(onboardingStatus === 'true');
+    } catch (error) {
+      console.error('Failed to check onboarding status:', error);
+      setIsOnboardingComplete(false);
+    }
+  };
+
+  const handleOnboardingComplete = () => {
+    setIsOnboardingComplete(true);
+  };
+
+  if (isLoading || isOnboardingComplete === null) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#1d4ed8" />
@@ -49,7 +70,14 @@ export function AppNavigator() {
   return (
     <NavigationContainer theme={appTheme}>
       <Stack.Navigator>
-        {isAuthenticated ? (
+        {!isOnboardingComplete ? (
+          <Stack.Screen 
+            name="Onboarding" 
+            options={{ headerShown: false }}
+          >
+            {() => <OnboardingScreen onOnboardingComplete={handleOnboardingComplete} />}
+          </Stack.Screen>
+        ) : isAuthenticated ? (
           <>
             <Stack.Screen
               name="MainTabs"
