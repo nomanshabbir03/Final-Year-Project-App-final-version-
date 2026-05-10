@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { Calendar } from 'react-native-calendars';
 import { BarChart } from 'react-native-chart-kit';
+import { ScreenContainer } from '../components/ScreenContainer';
 
 const { width, height } = Dimensions.get('window');
 
@@ -385,7 +386,8 @@ export function TasksScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenContainer title="Tasks" hideHeader>
+      <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
@@ -652,6 +654,7 @@ export function TasksScreen() {
         </View>
       )}
     </SafeAreaView>
+    </ScreenContainer>
   );
 }
 
