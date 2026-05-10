@@ -68,7 +68,7 @@ export function AppNavigator() {
           <>
             <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Signup" component={SignupScreen} options={{ title: 'Create Account' }} />
-            <Stack.Screen name="Confirm" component={ConfirmCodeScreen} options={{ title: 'Confirm' }} />
+            <Stack.Screen name="ConfirmCode" component={ConfirmCodeScreen} options={{ title: 'Confirm' }} />
           </>
         )}
       </Stack.Navigator>

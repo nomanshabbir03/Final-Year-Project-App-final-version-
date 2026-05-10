@@ -1,7 +1,7 @@
 export type RootStackParamList = {
   Login: undefined;
   Signup: undefined;
-  Confirm: { email?: string } | undefined;
+  ConfirmCode: { email?: string };
   MainTabs: undefined;
   AddTask: undefined;
   AddHabit: undefined;
@@ -10,7 +10,6 @@ export type RootStackParamList = {
   Calendar: undefined;
   Reports: undefined;
   TaskDetail: { taskId: string };
-  ConfirmCode: { email?: string };
 };
 
 export type MainTabParamList = {
