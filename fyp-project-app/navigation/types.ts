@@ -9,6 +9,8 @@ export type RootStackParamList = {
   AddHabit: undefined;
   AllHabits: undefined;
   HabitAnalytics: undefined;
+  AllTasks: undefined;
+  TaskAnalytics: undefined;
   Calendar: undefined;
   Reports: undefined;
   TaskDetail: { taskId: string };

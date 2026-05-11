@@ -69,8 +69,11 @@ export function TasksScreen() {
   };
 
   const handleViewAllTasks = () => {
-    // Navigate to Reports screen for now since AllTasks doesn't exist
-    navigation.navigate('Reports');
+    navigation.navigate('AllTasks');
+  };
+
+  const handleViewAnalytics = () => {
+    navigation.navigate('TaskAnalytics');
   };
 
   const getPriorityColor = (priority: string) => {
@@ -175,6 +178,11 @@ export function TasksScreen() {
           {/* View All Tasks Button */}
           <Pressable style={styles.viewAllButton} onPress={handleViewAllTasks}>
             <Text style={styles.viewAllButtonText}>View All Tasks</Text>
+          </Pressable>
+
+          {/* View Analytics Button */}
+          <Pressable style={styles.viewAllButton} onPress={handleViewAnalytics}>
+            <Text style={styles.viewAllButtonText}>View Analytics 📊</Text>
           </Pressable>
         </View>
       )}

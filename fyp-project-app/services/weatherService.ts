@@ -160,6 +160,38 @@ export async function fetchWeatherByCity(city: string) {
   } satisfies WeatherSnapshot;
 }
 
+export async function fetchUVIndex(lat: number, lon: number) {
+  try {
+    const response = await api.get('/weather/uv/', {
+      params: { lat, lon },
+    });
+    return parseJsonData<{ uv_index?: number; uv_date?: string }>(response.data);
+  } catch (error) {
+    throw toReadableWeatherError(error);
+  }
+}
+
+export async function fetchAirPollution(lat: number, lon: number) {
+  try {
+    const response = await api.get('/weather/air-pollution/', {
+      params: { lat, lon },
+    });
+    return parseJsonData<{
+      aqi?: number;
+      co?: number;
+      no?: number;
+      no2?: number;
+      o3?: number;
+      so2?: number;
+      pm2_5?: number;
+      pm10?: number;
+      nh3?: number;
+    }>(response.data);
+  } catch (error) {
+    throw toReadableWeatherError(error);
+  }
+}
+
 function toReadableWeatherError(error: unknown) {
   if (axios.isAxiosError(error)) {
     return new Error(toApiErrorMessage(error, 'Unable to load weather right now.'));

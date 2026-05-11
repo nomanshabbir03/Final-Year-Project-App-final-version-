@@ -105,3 +105,61 @@ class SavedLocationViewSet(
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class UVIndexView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        lat = request.query_params.get("lat")
+        lon = request.query_params.get("lon")
+        
+        if not lat or not lon:
+            return Response({"detail": 'Query parameters "lat" and "lon" are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            lat_float = float(lat)
+            lon_float = float(lon)
+        except ValueError:
+            return Response({"detail": 'Invalid latitude or longitude values.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        api_key = os.getenv("OPENWEATHER_API_KEY")
+        if not api_key:
+            return Response({"detail": "Server weather API key is not configured."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        adapter = WeatherAdapter(api_key, cache_ttl=600)  # 10 minute cache for UV data
+        try:
+            uv_data = adapter.get_uv_index(lat_float, lon_float)
+        except WeatherAdapterError as exc:
+            return Response({"detail": str(exc)}, status=exc.status_code)
+
+        return Response(uv_data, status=status.HTTP_200_OK)
+
+
+class AirPollutionView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        lat = request.query_params.get("lat")
+        lon = request.query_params.get("lon")
+        
+        if not lat or not lon:
+            return Response({"detail": 'Query parameters "lat" and "lon" are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            lat_float = float(lat)
+            lon_float = float(lon)
+        except ValueError:
+            return Response({"detail": 'Invalid latitude or longitude values.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        api_key = os.getenv("OPENWEATHER_API_KEY")
+        if not api_key:
+            return Response({"detail": "Server weather API key is not configured."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        adapter = WeatherAdapter(api_key, cache_ttl=600)  # 10 minute cache for AQI data
+        try:
+            aqi_data = adapter.get_air_pollution(lat_float, lon_float)
+        except WeatherAdapterError as exc:
+            return Response({"detail": str(exc)}, status=exc.status_code)
+
+        return Response(aqi_data, status=status.HTTP_200_OK)

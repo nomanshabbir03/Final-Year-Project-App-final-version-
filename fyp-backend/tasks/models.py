@@ -2,28 +2,6 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
-class TaskAttachment(models.Model):
-	ATTACHMENT_TYPE_FILE = 'file'
-	ATTACHMENT_TYPE_URL = 'url'
-	
-	ATTACHMENT_TYPE_CHOICES = [
-		(ATTACHMENT_TYPE_FILE, 'File'),
-		(ATTACHMENT_TYPE_URL, 'URL'),
-	]
-	
-	task = models.ForeignKey('Task', on_delete=models.CASCADE, related_name='attachments')
-	attachment_type = models.CharField(max_length=10, choices=ATTACHMENT_TYPE_CHOICES, default=ATTACHMENT_TYPE_FILE)
-	file = models.FileField(upload_to='task_attachments/', null=True, blank=True)
-	url = models.URLField(null=True, blank=True)
-	created_at = models.DateTimeField(auto_now_add=True)
-	
-	class Meta:
-		ordering = ['-created_at']
-	
-	def __str__(self):
-		return f"{self.task.title} - {self.attachment_type}"
-
-
 class Task(models.Model):
 	PRIORITY_LOW = 'low'
 	PRIORITY_MEDIUM = 'medium'
@@ -68,3 +46,25 @@ class Task(models.Model):
 
 	def __str__(self):
 		return self.title
+
+
+class TaskAttachment(models.Model):
+	ATTACHMENT_TYPE_FILE = 'file'
+	ATTACHMENT_TYPE_URL = 'url'
+	
+	ATTACHMENT_TYPE_CHOICES = [
+		(ATTACHMENT_TYPE_FILE, 'File'),
+		(ATTACHMENT_TYPE_URL, 'URL'),
+	]
+	
+	task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='attachments')
+	attachment_type = models.CharField(max_length=10, choices=ATTACHMENT_TYPE_CHOICES, default=ATTACHMENT_TYPE_FILE)
+	file = models.FileField(upload_to='task_attachments/', null=True, blank=True)
+	url = models.URLField(null=True, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True)
+	
+	class Meta:
+		ordering = ['-created_at']
+	
+	def __str__(self):
+		return f"{self.task.title} - {self.attachment_type}"

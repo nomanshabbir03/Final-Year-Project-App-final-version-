@@ -1,14 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, KeyboardAvoidingView, Platform, TouchableWithoutFeedback } from 'react-native';
 import { ImageBackground } from 'expo-image';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Colors } from '../constants/theme';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { fetchWeatherByCity, type WeatherSnapshot } from '../services/weatherService';
+import { fetchWeatherByCity, fetchUVIndex, fetchAirPollution, type WeatherSnapshot } from '../services/weatherService';
 import {
   addSavedLocation,
   deleteSavedLocation,
@@ -31,6 +32,74 @@ export function WeatherScreen() {
   const [staleBanner, setStaleBanner] = useState(false);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
   const [allowDeviceLocation, setAllowDeviceLocation] = useState(true);
+  const [uvIndex, setUvIndex] = useState<number | null>(null);
+  const [aqi, setAqi] = useState<number | null>(null);
+  const [pollenLevel, setPollenLevel] = useState<'Low' | 'Moderate' | 'High'>('Low');
+  const [runningCondition, setRunningCondition] = useState<{ status: 'Good' | 'Moderate' | 'Poor'; reason?: string }>({ status: 'Good' });
+
+  const loadAdditionalData = async (lat: number, lon: number, temperature: number, humidity: number, windSpeed: number) => {
+    try {
+      // Fetch UV Index
+      const uvData = await fetchUVIndex(lat, lon);
+      if (uvData.uv_index !== undefined) {
+        setUvIndex(uvData.uv_index);
+      }
+
+      // Fetch AQI
+      const aqiData = await fetchAirPollution(lat, lon);
+      if (aqiData.aqi !== undefined) {
+        setAqi(aqiData.aqi);
+      }
+
+      // Calculate pollen level (estimated)
+      const month = new Date().getMonth();
+      const isPollenSeason = month >= 3 && month <= 9; // April to September
+      let pollenEstimate: 'Low' | 'Moderate' | 'High' = 'Low';
+      
+      if (isPollenSeason && humidity < 70) {
+        if (windSpeed > 15) {
+          pollenEstimate = 'High';
+        } else {
+          pollenEstimate = 'Moderate';
+        }
+      }
+      setPollenLevel(pollenEstimate);
+
+      // Calculate running conditions
+      let runningStatus: 'Good' | 'Moderate' | 'Poor' = 'Good';
+      let runningReason = '';
+
+      // Temperature considerations
+      if (temperature < 0 || temperature > 30) {
+        runningStatus = 'Poor';
+        runningReason = temperature < 0 ? 'Too cold' : 'Too hot';
+      } else if (temperature < 5 || temperature > 25) {
+        runningStatus = 'Moderate';
+        runningReason = temperature < 5 ? 'Cold conditions' : 'Warm conditions';
+      }
+
+      // AQI considerations
+      if (aqiData.aqi !== undefined) {
+        if (aqiData.aqi >= 151) {
+          runningStatus = 'Poor';
+          runningReason = runningReason ? `${runningReason}, poor air quality` : 'Poor air quality';
+        } else if (aqiData.aqi >= 51) {
+          if (runningStatus === 'Good') runningStatus = 'Moderate';
+          runningReason = runningReason ? `${runningReason}, moderate air quality` : 'Moderate air quality';
+        }
+      }
+
+      // Humidity considerations
+      if (humidity > 80) {
+        if (runningStatus === 'Good') runningStatus = 'Moderate';
+        runningReason = runningReason ? `${runningReason}, high humidity` : 'High humidity';
+      }
+
+      setRunningCondition({ status: runningStatus, reason: runningReason });
+    } catch (err) {
+      console.warn('Failed to load additional weather data:', err);
+    }
+  };
 
   const cacheKeyForCity = (city: string) => `weather.cache.${city.trim().toLowerCase()}`;
   const deviceLocationKey = 'weather.useDeviceLocation';
@@ -155,6 +224,20 @@ export function WeatherScreen() {
         updatedAt: snapshot.updatedAt,
       });
 
+      // Load additional data if coordinates are available
+      if (snapshot.lat && snapshot.lon) {
+        console.log('Loading additional data for:', snapshot.city, 'lat:', snapshot.lat, 'lon:', snapshot.lon);
+        await loadAdditionalData(
+          snapshot.lat,
+          snapshot.lon,
+          snapshot.temperatureC,
+          snapshot.humidity,
+          snapshot.windSpeedKph || 0
+        );
+      } else {
+        console.log('No coordinates available for:', snapshot.city, 'lat:', snapshot.lat, 'lon:', snapshot.lon);
+      }
+
       if (persistSelection) {
         await setDeviceLocationPreference(false);
       }
@@ -167,6 +250,10 @@ export function WeatherScreen() {
       if (!silent) {
         setNotice(`Showing latest weather for ${snapshot.city || clean}.`);
       }
+
+      // Debug logging to check snapshot data
+      console.log('WEATHER SNAPSHOT:', JSON.stringify(snapshot, null, 2));
+      console.log('LAT:', snapshot.lat, 'LON:', snapshot.lon);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to fetch weather for that city.';
       if (!silent) {
@@ -224,6 +311,20 @@ export function WeatherScreen() {
         updatedAt: snapshot.updatedAt,
       });
       setCityInput(snapshot.city);
+      
+      // Load additional data if coordinates are available
+      if (snapshot.lat && snapshot.lon) {
+        console.log('Loading additional data for:', snapshot.city, 'lat:', snapshot.lat, 'lon:', snapshot.lon);
+        await loadAdditionalData(
+          snapshot.lat,
+          snapshot.lon,
+          snapshot.temperatureC,
+          snapshot.humidity,
+          snapshot.windSpeedKph || 0
+        );
+      } else {
+        console.log('No coordinates available for:', snapshot.city, 'lat:', snapshot.lat, 'lon:', snapshot.lon);
+      }
       await updateProfile({ selectedCity: snapshot.city });
       setNotice(`Using device location: ${snapshot.city}.`);
       setShowLocationPicker(false);
@@ -335,6 +436,7 @@ export function WeatherScreen() {
 
   const minText = formatTemp(weather?.minC);
   const maxText = formatTemp(weather?.maxC);
+  const temperature = formatTemp(weather?.temperatureC);
 
   const conditionLabel = weather?.condition ?? 'Unknown';
   const isNightNowForCity = isNightForTimestamp(Date.now() / 1000, weather);
@@ -350,109 +452,138 @@ export function WeatherScreen() {
   const dailyItems = Array.isArray(weather?.daily) ? weather?.daily ?? [] : [];
 
   return (
-    <ImageBackground
-      key={backgroundUri}
-      source={{ uri: backgroundUri }}
-      style={styles.background}
-      contentFit="cover"
-      cachePolicy="none">
-      <View style={styles.backgroundOverlay}>
-        <ScreenContainer
-          title="Weather"
-          safeAreaStyle={{ backgroundColor: 'transparent' }}
-          contentContainerStyle={{ gap: 16, paddingBottom: 120 }}
-          hideHeader>
-          <View style={styles.hero}>
-            <Text style={styles.heroCity}>{weather?.city ?? 'No data yet'}</Text>
-            {emojiIcon ? <Text style={styles.heroEmoji}>{emojiIcon}</Text> : null}
-            <Text style={styles.heroTemp}>{formatTemp(weather?.temperatureC)}</Text>
-            <Text style={styles.heroCondition}>{displayCondition}</Text>
-            <Text style={styles.heroHighLow}>High: {maxText}  Low: {minText}</Text>
-            <Text style={styles.heroSummary}>{summaryText}</Text>
-            <Text style={styles.heroSummary}>
-              {Number.isFinite(weather?.windSpeedKph) ? `Wind up to ${windText}.` : 'Wind data unavailable.'}
-            </Text>
-            <Text style={styles.heroSummary}>
-              Humidity: {Number.isFinite(weather?.humidity) ? `${weather?.humidity}%` : '--'}
-            </Text>
+    <View style={styles.container}>
+      {/* TOP SECTION - fixed, not scrollable */}
+      <ImageBackground
+        source={{ uri: backgroundUri }}
+        style={styles.heroImage}>
+        <View style={styles.heroOverlay}>
+          {/* Header row */}
+          <View style={styles.headerRow}>
+            <Text style={styles.headerCity}>{weather?.city ?? 'No data yet'}</Text>
+            <Pressable onPress={() => setShowLocationPicker(true)}>
+              <Ionicons name="locate" size={24} color="#fff" />
+            </Pressable>
           </View>
 
-          {staleBanner ? (
-            <Text style={styles.staleBanner}>
-              Showing cached forecast{cachedAt ? ` from ${formatCachedTime(cachedAt)}` : ''}. It may be outdated.
-            </Text>
-          ) : null}
+          {/* Temperature and condition */}
+          <Text style={styles.heroTemp}>{temperature}</Text>
+          <Text style={styles.heroCondition}>{displayCondition}</Text>
+          <Text style={styles.heroHighLow}>H: {maxText} L: {minText}</Text>
+        </View>
+      </ImageBackground>
 
-          {locationDenied ? (
-            <View style={styles.inlineSearch}>
-              <Text style={styles.inlineSearchHint}>Location permission denied. Search by city.</Text>
-              <View style={styles.searchRow}>
-                <TextInput
-                  value={cityInput}
-                  onChangeText={setCityInput}
-                  placeholder="Enter city"
-                  style={styles.input}
-                  autoCapitalize="words"
-                />
-                <Pressable style={styles.button} onPress={() => loadByCity(cityInput)} disabled={loading}>
-                  <Text style={styles.buttonText}>Search</Text>
-                </Pressable>
+      {/* WEATHER CARDS - fixed, not scrollable */}
+      <View style={styles.weatherCardsRow}>
+        <View style={styles.weatherCard}>
+          <Text style={styles.weatherCardIcon}>💧</Text>
+          <Text style={styles.weatherCardLabel}>Humidity</Text>
+          <Text style={styles.weatherCardValue}>{Number.isFinite(weather?.humidity) ? `${weather?.humidity}%` : '--'}</Text>
+        </View>
+        <View style={styles.weatherCard}>
+          <Text style={styles.weatherCardIcon}>💨</Text>
+          <Text style={styles.weatherCardLabel}>Wind</Text>
+          <Text style={styles.weatherCardValue}>{windText}</Text>
+        </View>
+        <View style={styles.weatherCard}>
+          <Text style={styles.weatherCardIcon}>☀️</Text>
+          <Text style={styles.weatherCardLabel}>UV Index</Text>
+          <Text style={styles.weatherCardValue}>{uvIndex !== null ? uvIndex.toFixed(1) : '--'}</Text>
+        </View>
+      </View>
+
+      {/* SCROLLABLE SECTION */}
+      <ScrollView style={styles.scrollView}>
+        {/* Hourly Forecast */}
+        <Text style={styles.sectionTitle}>Hourly Forecast</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hourlyRow}>
+          {hourlyItems.length > 0 ? (
+            hourlyItems.map((hour, index) => (
+              <View key={`${hour.dt || 0}-${index}`} style={styles.hourCard}>
+                <Text style={styles.hourTime}>{formatHour(hour.dt, weather?.timezoneOffset)}</Text>
+                <Text style={styles.hourEmoji}>
+                  {resolveWeatherEmoji(hour.condition ?? conditionLabel, isNightForTimestamp(hour.dt, weather))}
+                </Text>
+                <Text style={styles.hourTemp}>{formatTemp(hour.temp)}</Text>
+                <Text style={styles.hourPop}>
+                  Precip: {formatPop(resolvePrecip(hour.pop, hour.condition ?? conditionLabel))}
+                </Text>
               </View>
-            </View>
-          ) : null}
+            ))
+          ) : (
+            <Text style={styles.emptyText}>No hourly data yet.</Text>
+          )}
+        </ScrollView>
 
-          {loading ? <ActivityIndicator size="large" color={Colors.primary} /> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-
-          <Text style={styles.sectionTitle}>Hourly Forecast</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hourlyRow}>
-            {hourlyItems.length > 0 ? (
-              hourlyItems.map((hour, index) => (
-                <View key={`${hour.dt || 0}-${index}`} style={styles.hourCard}>
-                  <Text style={styles.hourTime}>{formatHour(hour.dt, weather?.timezoneOffset)}</Text>
-                  <Text style={styles.hourEmoji}>
-                    {resolveWeatherEmoji(hour.condition ?? conditionLabel, isNightForTimestamp(hour.dt, weather))}
-                  </Text>
-                  <Text style={styles.hourTemp}>{formatTemp(hour.temp)}</Text>
-                  <Text style={styles.hourPop}>
-                    Precip: {formatPop(resolvePrecip(hour.pop, hour.condition ?? conditionLabel))}
+        {/* Daily Forecast */}
+        <Text style={styles.sectionTitle}>Daily Forecast</Text>
+        <View style={styles.dailyList}>
+          {dailyItems.length > 0 ? (
+            dailyItems.map((day, index) => (
+              <View key={`${day.dt || 0}-${index}`} style={styles.dailyRow}>
+                <Text style={styles.dailyDay}>{formatDay(day.date, day.dt, index)}</Text>
+                <Text style={styles.dailyEmoji}>
+                  {resolveWeatherEmoji(
+                    day.condition ?? conditionLabel,
+                    isNightForTimestamp(day.dt ? day.dt + 43200 : undefined, weather)
+                  )}
+                </Text>
+                <View style={styles.dailyMeta}>
+                  <Text style={styles.dailyTemps}>H: {formatTemp(day.temp_max)}  L: {formatTemp(day.temp_min)}</Text>
+                  <Text style={styles.dailyPop}>
+                    Precip: {formatPop(resolvePrecip(day.pop, day.condition ?? conditionLabel))}
                   </Text>
                 </View>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>No hourly data yet.</Text>
-            )}
-          </ScrollView>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.emptyText}>No daily data yet.</Text>
+          )}
+        </View>
 
-          <Text style={styles.sectionTitle}>Daily Forecast</Text>
-          <View style={styles.dailyList}>
-            {dailyItems.length > 0 ? (
-              dailyItems.map((day, index) => (
-                <View key={`${day.dt || 0}-${index}`} style={styles.dailyRow}>
-                  <Text style={styles.dailyDay}>{formatDay(day.date, day.dt, index)}</Text>
-                  <Text style={styles.dailyEmoji}>
-                    {resolveWeatherEmoji(
-                      day.condition ?? conditionLabel,
-                      isNightForTimestamp(day.dt ? day.dt + 43200 : undefined, weather)
-                    )}
-                  </Text>
-                  <View style={styles.dailyMeta}>
-                    <Text style={styles.dailyTemps}>H: {formatTemp(day.temp_max)}  L: {formatTemp(day.temp_min)}</Text>
-                    <Text style={styles.dailyPop}>
-                      Precip: {formatPop(resolvePrecip(day.pop, day.condition ?? conditionLabel))}
-                    </Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>No daily data yet.</Text>
-            )}
+        {/* Air Quality & Conditions */}
+        <Text style={styles.sectionTitle}>Air Quality & Conditions</Text>
+        <View style={styles.bottomCardsRow}>
+          <View style={styles.bottomCard}>
+            <Text style={styles.bottomCardIcon}>🌸</Text>
+            <Text style={styles.bottomCardLabel}>Pollen</Text>
+            <Text style={styles.bottomCardValue}>{pollenLevel}</Text>
           </View>
-        </ScreenContainer>
+          <View style={styles.bottomCard}>
+            <Text style={styles.bottomCardIcon}>💨</Text>
+            <Text style={styles.bottomCardLabel}>AQI</Text>
+            <Text style={styles.bottomCardValue}>
+              {aqi !== null ? getAQILabel(aqi) : '--'}
+            </Text>
+          </View>
+          <View style={styles.bottomCard}>
+            <Text style={styles.bottomCardIcon}>🏃</Text>
+            <Text style={styles.bottomCardLabel}>Running</Text>
+            <Text style={styles.bottomCardValue}>
+              {runningCondition.status}
+              {runningCondition.reason ? `\n(${runningCondition.reason})` : ''}
+            </Text>
+          </View>
+        </View>
 
-        {showLocationPicker ? (
-          <View style={styles.pickerOverlay}>
+        {/* Error and notice messages */}
+        {staleBanner ? (
+          <Text style={styles.staleBanner}>
+            Showing cached forecast{cachedAt ? ` from ${formatCachedTime(cachedAt)}` : ''}. It may be outdated.
+          </Text>
+        ) : null}
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      </ScrollView>
+
+      {/* LOCATION PICKER - absolute overlay */}
+      {showLocationPicker && (
+        <View style={styles.pickerOverlay}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.pickerOverlay}
+          >
             <View style={styles.pickerSheet}>
               <View style={styles.pickerHeader}>
                 <Text style={styles.pickerTitle}>Change Location</Text>
@@ -468,13 +599,23 @@ export function WeatherScreen() {
                   placeholder="Enter city"
                   style={styles.input}
                   autoCapitalize="words"
+                  editable={true}
+                  focusable={true}
                 />
-                <Pressable style={styles.button} onPress={() => loadByCity(cityInput)} disabled={loading}>
+                <Pressable style={styles.button} onPress={async () => {
+                  console.log('Search button pressed, cityInput:', cityInput);
+                  await loadByCity(cityInput);
+                  setShowLocationPicker(false);
+                }} disabled={loading}>
                   <Text style={styles.buttonText}>Search</Text>
                 </Pressable>
               </View>
 
-              <Pressable style={styles.locationButton} onPress={() => loadByLocation()} disabled={loading}>
+              <Pressable style={styles.locationButton} onPress={async () => {
+                console.log('Use Device Location button pressed');
+                await loadByLocation();
+                setShowLocationPicker(false);
+              }} disabled={loading}>
                 <Text style={styles.locationButtonText}>Use Device Location</Text>
               </Pressable>
 
@@ -501,41 +642,42 @@ export function WeatherScreen() {
                 ))
               )}
             </View>
-          </View>
-        ) : null}
-
-        <Pressable style={styles.bottomButton} onPress={() => setShowLocationPicker(true)}>
-          <Text style={styles.bottomButtonText}>Change Location</Text>
-        </Pressable>
-      </View>
-    </ImageBackground>
+          </KeyboardAvoidingView>
+        </View>
+      )}
+    </View>
   );
 }
 
-function resolveWeatherBackground(condition?: string, cacheKey?: string) {
-  const normalized = (condition || '').toLowerCase();
-  const cacheBuster = encodeURIComponent(cacheKey || normalized || 'default');
-
-  if (normalized.includes('sunny')) {
-    return `https://upload.wikimedia.org/wikipedia/commons/9/99/Blue_Sky_and_Clouds.jpg?cb=${cacheBuster}`;
+// Helper functions
+const resolveWeatherBackground = (condition: string, updatedAt?: string): string => {
+  const c = condition?.toLowerCase() ?? '';
+  
+  if (c.includes('thunder') || c.includes('storm')) {
+    return 'https://images.unsplash.com/photo-1605727216801-e27ce1d0cc28?w=1200&q=80';
   }
-  if (normalized.includes('cloud')) {
-    return `https://upload.wikimedia.org/wikipedia/commons/4/4f/Clouds_in_the_sky.jpg?cb=${cacheBuster}`;
+  if (c.includes('snow') || c.includes('blizzard')) {
+    return 'https://images.unsplash.com/photo-1491002052546-bf38f186af56?w=1200&q=80';
   }
-  if (normalized.includes('rain')) {
-    return `https://upload.wikimedia.org/wikipedia/commons/5/5c/Rain_drop_on_window.jpg?cb=${cacheBuster}`;
+  if (c.includes('rain') || c.includes('drizzle')) {
+    return 'https://images.unsplash.com/photo-1428592953211-077101b2021b?w=1200&q=80';
   }
-  if (normalized.includes('storm')) {
-    return `https://upload.wikimedia.org/wikipedia/commons/5/5b/Thunderstorm_in_Georgia.jpg?cb=${cacheBuster}`;
+  if (c.includes('haze') || c.includes('hazy') || c.includes('fog') || c.includes('mist') || c.includes('smoke')) {
+    return 'https://images.unsplash.com/photo-1485236715568-ddc5ee6ca227?w=1200&q=80';
   }
-  if (normalized.includes('snow')) {
-    return `https://upload.wikimedia.org/wikipedia/commons/1/1b/Snowflakes_macro.jpg?cb=${cacheBuster}`;
+  if (c.includes('cloud') || c.includes('overcast')) {
+    return 'https://images.unsplash.com/photo-1499956827185-0d63ee78a910?w=1200&q=80';
   }
-  if (normalized.includes('hazy') || normalized.includes('smoke') || normalized.includes('mist')) {
-    return `https://upload.wikimedia.org/wikipedia/commons/8/8d/Smog_over_Los_Angeles.jpg?cb=${cacheBuster}`;
+  if (c.includes('wind') || c.includes('breezy')) {
+    return 'https://images.unsplash.com/photo-1527482797697-8795b05a13fe?w=1200&q=80';
   }
-  return `https://upload.wikimedia.org/wikipedia/commons/4/4f/Clouds_in_the_sky.jpg?cb=${cacheBuster}`;
-}
+  if (c.includes('sunny') || c.includes('clear')) {
+    // Check if night
+    return 'https://images.unsplash.com/photo-1601297183305-6df142704ea2?w=1200&q=80';
+  }
+  // Default
+  return 'https://images.unsplash.com/photo-1504608524841-42584120d693?w=1200&q=80';
+};
 
 function resolveWeatherEmoji(condition?: string, isNight?: boolean) {
   const normalized = (condition || '').toLowerCase();
@@ -667,359 +809,380 @@ function formatDay(dateText?: string, dtSeconds?: number, index?: number) {
     }
   }
 
-  if (Number.isFinite(dtSeconds) && (dtSeconds as number) > 0) {
+  if (typeof dtSeconds === 'number' && dtSeconds > 0) {
     try {
-      return new Date((dtSeconds as number) * 1000).toLocaleDateString([], { weekday: 'short' });
+      const date = new Date(dtSeconds * 1000);
+      return date.toLocaleDateString([], { weekday: 'short' });
     } catch {
-      return '--';
+      // fall through to index
     }
   }
 
   if (typeof index === 'number') {
-    try {
-      const fallback = Date.now() + index * 86400 * 1000;
-      return new Date(fallback).toLocaleDateString([], { weekday: 'short' });
-    } catch {
-      return '--';
-    }
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const today = new Date().getDay();
+    const targetDay = (today + index) % 7;
+    return index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : days[targetDay];
   }
 
   return '--';
 }
 
-function formatCachedTime(isoText: string) {
-  try {
-    return new Date(isoText).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  } catch {
-    return 'earlier';
+function formatPop(pop?: number) {
+  if (typeof pop !== 'number' || pop < 0) {
+    return '--';
   }
-}
-
-function formatPop(value?: number) {
-  if (typeof value !== 'number') {
-    return '—';
-  }
-  const percent = value * 100;
-  if (percent > 0 && percent < 1) {
-    return '<1%';
-  }
-  return `${Math.round(percent)}%`;
+  return `${Math.round(pop * 100)}%`;
 }
 
 function resolvePrecip(pop?: number, condition?: string) {
-  if (typeof pop === 'number' && pop > 0) {
-    return pop;
-  }
-
   const normalized = (condition || '').toLowerCase();
-  if (normalized.includes('storm') || normalized.includes('thunder')) {
-    return 0.6 + Math.random() * 0.3;
+  const isPrecipCondition = normalized.includes('rain') || normalized.includes('drizzle') || normalized.includes('storm') || normalized.includes('snow');
+  
+  if (isPrecipCondition && (typeof pop !== 'number' || pop < 0.1)) {
+    return 0.3; // Default 30% for precip conditions
   }
-  if (normalized.includes('rain') || normalized.includes('drizzle')) {
-    return 0.4 + Math.random() * 0.3;
-  }
-  if (normalized.includes('snow') || normalized.includes('sleet')) {
-    return 0.3 + Math.random() * 0.3;
-  }
-  if (normalized.includes('cloud')) {
-    return 0.15 + Math.random() * 0.2;
-  }
-  if (normalized.includes('hazy') || normalized.includes('smoke') || normalized.includes('mist')) {
-    return 0.1 + Math.random() * 0.15;
-  }
-
-  // Clear or unknown.
-  return 0.05 + Math.random() * 0.1;
+  
+  return pop ?? 0;
 }
 
-function formatHumidity(value?: number) {
-  if (!Number.isFinite(value)) {
-    return '--';
+function formatCachedTime(cachedAt?: string | null) {
+  if (!cachedAt) {
+    return null;
   }
-  const clamped = Math.min(100, Math.max(0, Math.round(value as number)));
-  return `${clamped}%`;
+  try {
+    const date = new Date(cachedAt);
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return null;
+  }
 }
 
-
+function getAQILabel(aqi: number): string {
+  if (aqi <= 50) return 'Good';
+  if (aqi <= 100) return 'Moderate';
+  if (aqi <= 150) return 'Unhealthy for Sensitive';
+  if (aqi <= 200) return 'Unhealthy';
+  if (aqi <= 300) return 'Very Unhealthy';
+  return 'Hazardous';
+}
 
 const styles = StyleSheet.create({
-  background: {
-    flex: 1,
+  container: { 
+    flex: 1, 
+    backgroundColor: Colors.bgDark 
   },
-  backgroundOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(244, 250, 245, 0.82)',
-    paddingTop: 40,
+  heroImage: { 
+    width: '100%', 
+    height: 300 
   },
-  hero: {
-    gap: 6,
-    alignItems: 'center',
+  heroOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.3)', 
+    padding: 20, 
+    justifyContent: 'flex-end' 
   },
-  heroCity: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    textAlign: 'center',
+  headerRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 8 
   },
-  heroTemp: {
-    fontSize: 56,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    textAlign: 'center',
+  headerCity: { 
+    fontSize: 24, 
+    fontWeight: '700', 
+    color: '#fff' 
   },
-  heroEmoji: {
-    fontSize: 72,
-    textAlign: 'center',
+  heroTemp: { 
+    fontSize: 64, 
+    fontWeight: '200', 
+    color: '#fff' 
   },
-  heroCondition: {
-    fontSize: 20,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    textAlign: 'center',
+  heroCondition: { 
+    fontSize: 18, 
+    color: '#fff', 
+    opacity: 0.9 
   },
-  heroHighLow: {
-    fontSize: 16,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    textAlign: 'center',
+  heroHighLow: { 
+    fontSize: 14, 
+    color: '#fff', 
+    opacity: 0.7, 
+    marginTop: 4 
   },
-  heroSummary: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    textAlign: 'center',
+  weatherCardsRow: { 
+    flexDirection: 'row', 
+    backgroundColor: Colors.surfaceDark, 
+    paddingHorizontal: 16, 
+    paddingVertical: 12, 
+    gap: 8 
   },
-  staleBanner: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+  weatherCard: { 
+    flex: 1, 
+    backgroundColor: 'rgba(29,158,117,0.15)', 
+    borderRadius: 12, 
+    padding: 12, 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: Colors.primary + '40' 
   },
-  inlineSearch: {
-    gap: 8,
+  weatherCardIcon: { 
+    fontSize: 22 
   },
-  inlineSearchHint: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    textAlign: 'center',
+  weatherCardLabel: { 
+    fontSize: 11, 
+    color: Colors.textSecondaryDark, 
+    marginTop: 4 
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginTop: 6,
+  weatherCardValue: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: Colors.textPrimaryDark, 
+    marginTop: 2 
   },
+  scrollView: { 
+    flex: 1, 
+    backgroundColor: Colors.bgDark 
+  },
+  sectionTitle: { 
+    fontSize: 16, 
+    fontWeight: '600', 
+    color: Colors.textPrimaryDark, 
+    paddingHorizontal: 16, 
+    paddingTop: 16, 
+    paddingBottom: 8 
+  },
+  pickerOverlay: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    justifyContent: 'flex-end' 
+  },
+  pickerSheet: { 
+    backgroundColor: Colors.surfaceDark, 
+    borderTopLeftRadius: 20, 
+    borderTopRightRadius: 20, 
+    padding: 20, 
+    maxHeight: '80%' 
+  },
+  // Additional styles for existing components
   hourlyRow: {
-    gap: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    gap: 12,
   },
   hourCard: {
-    width: 96,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 16,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+    backgroundColor: 'rgba(29,158,117,0.15)',
+    borderRadius: 12,
+    padding: 12,
     alignItems: 'center',
-    gap: 6,
+    minWidth: 80,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
   hourTime: {
     fontSize: 12,
-    color: Colors.textSecondary,
-    fontWeight: '600',
+    color: Colors.textSecondaryDark,
+    marginBottom: 4,
   },
   hourEmoji: {
-    fontSize: 24,
+    fontSize: 20,
+    marginBottom: 4,
   },
   hourTemp: {
-    fontSize: 13,
-    color: Colors.textPrimary,
+    fontSize: 16,
     fontWeight: '700',
+    color: Colors.textPrimaryDark,
+    marginBottom: 2,
   },
   hourPop: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: '600',
+    fontSize: 10,
+    color: Colors.textSecondaryDark,
   },
   dailyList: {
-    gap: 10,
+    paddingHorizontal: 16,
   },
   dailyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDark,
   },
   dailyDay: {
-    fontSize: 14,
-    color: Colors.textPrimary,
+    fontSize: 16,
     fontWeight: '600',
-    width: 64,
+    color: Colors.textPrimaryDark,
+    flex: 1,
   },
   dailyEmoji: {
     fontSize: 20,
+    marginHorizontal: 16,
   },
   dailyMeta: {
+    flex: 2,
     alignItems: 'flex-end',
-    gap: 4,
   },
   dailyTemps: {
-    fontSize: 13,
-    color: Colors.textSecondary,
+    fontSize: 16,
     fontWeight: '600',
+    color: Colors.textPrimaryDark,
   },
   dailyPop: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: '600',
+    fontSize: 12,
+    color: Colors.textSecondaryDark,
+    marginTop: 2,
   },
-  emptyText: {
-    color: Colors.textHint,
-    fontSize: 13,
-  },
-  searchRow: {
+  bottomCardsRow: {
     flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 20,
     gap: 8,
   },
-  input: {
+  bottomCard: {
     flex: 1,
-    height: 44,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    backgroundColor: Colors.surfaceLight,
-  },
-  button: {
-    backgroundColor: Colors.primary,
-    borderRadius: 10,
-    height: 44,
-    justifyContent: 'center',
+    backgroundColor: 'rgba(29,158,117,0.15)',
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  bottomCardIcon: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  bottomCardLabel: {
+    fontSize: 12,
+    color: Colors.textSecondaryDark,
+    marginBottom: 4,
+  },
+  bottomCardValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimaryDark,
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: Colors.textSecondaryDark,
+    textAlign: 'center',
+    padding: 20,
+  },
+  staleBanner: {
+    fontSize: 12,
+    color: '#ffa500',
+    textAlign: 'center',
     paddingHorizontal: 16,
-  },
-  buttonText: {
-    color: Colors.white,
-    fontWeight: '700',
-  },
-  locationButton: {
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    borderRadius: 10,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.primarySurface,
-  },
-  locationButtonText: {
-    color: Colors.primary,
-    fontWeight: '700',
-  },
-  saveLocationButton: {
-    borderWidth: 1,
-    borderColor: Colors.accentTeal,
-    borderRadius: 10,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.primarySurface,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,165,0,0.1)',
   },
   error: {
-    color: Colors.error,
-    fontWeight: '600',
+    fontSize: 14,
+    color: '#ff6b6b',
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   notice: {
-    color: Colors.success,
-    fontWeight: '600',
-    backgroundColor: Colors.primarySurface,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight,
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  savedTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginTop: 8,
-  },
-  savedCity: {
     fontSize: 14,
-    color: Colors.textPrimary,
-    fontWeight: '600',
-  },
-  savedMeta: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  savedPickRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  pickChevron: {
-    fontSize: 20,
-    color: Colors.textHint,
-    marginLeft: 8,
-  },
-  bottomButton: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 18,
-    backgroundColor: Colors.primary,
-    borderRadius: 16,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  bottomButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  pickerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-    justifyContent: 'flex-end',
-  },
-  pickerSheet: {
-    backgroundColor: Colors.surfaceLight,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 16,
-    gap: 12,
+    color: '#51cf66',
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   pickerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 20,
   },
   pickerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: Colors.textPrimary,
+    color: Colors.textPrimaryDark,
   },
   closeText: {
-    color: Colors.primary,
-    fontWeight: '700',
+    fontSize: 16,
+    color: '#007AFF',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  input: {
+    flex: 1,
+    height: 48,
+    backgroundColor: 'rgba(29,158,117,0.15)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    color: Colors.textPrimaryDark,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    height: 48,
+  },
+  buttonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  locationButton: {
+    backgroundColor: 'rgba(0,122,255,0.2)',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+  },
+  saveLocationButton: {
+    backgroundColor: 'rgba(76,175,80,0.2)',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  locationButtonText: {
+    color: Colors.textPrimaryDark,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  savedTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimaryDark,
+    marginBottom: 12,
+  },
+  savedPickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDark,
+  },
+  savedCity: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimaryDark,
+  },
+  savedMeta: {
+    fontSize: 12,
+    color: Colors.textSecondaryDark,
+    marginTop: 2,
+  },
+  pickChevron: {
+    fontSize: 20,
+    color: Colors.textSecondaryDark,
   },
 });

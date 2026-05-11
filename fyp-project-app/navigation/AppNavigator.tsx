@@ -10,6 +10,8 @@ import { AddTaskScreen } from '../screens/AddTaskScreen';
 import { AddHabitScreen } from '../screens/AddHabitScreen';
 import { AllHabitsScreen } from '../screens/AllHabitsScreen';
 import { HabitAnalyticsScreen } from '../screens/HabitAnalyticsScreen';
+import { AllTasksScreen } from '../screens/AllTasksScreen';
+import { TaskAnalyticsScreen } from '../screens/TaskAnalyticsScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { SignupScreen } from '../screens/SignupScreen';
 import { CalendarScreen } from '../screens/CalendarScreen';
@@ -93,8 +95,10 @@ export function AppNavigator() {
         />
         <Stack.Screen name="AddTask" component={AddTaskScreen} options={{ headerShown: false }} />
         <Stack.Screen name="AddHabit" component={AddHabitScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="AllHabits" component={AllHabitsScreen} options={{ title: 'All Habits' }} />
+        <Stack.Screen name="AllHabits" component={AllHabitsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="HabitAnalytics" component={HabitAnalyticsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="AllTasks" component={AllTasksScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TaskAnalytics" component={TaskAnalyticsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PrayerTime" component={PrayerTimeScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Qibla" component={QiblaScreen} options={{ headerShown: false }} />
         <Stack.Screen name="AdhanSettings" component={AdhanSettingsScreen} options={{ headerShown: false }} />

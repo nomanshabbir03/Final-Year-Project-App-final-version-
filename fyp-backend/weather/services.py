@@ -189,3 +189,49 @@ class WeatherAdapter:
             'hourly': hourly_items[:12],
             'daily': daily,
         }
+
+    def get_uv_index(self, lat: float, lon: float) -> dict:
+        """Fetch UV Index data from OpenWeatherMap"""
+        try:
+            query = urlencode({'lat': lat, 'lon': lon, 'appid': self.api_key})
+            url = f'https://api.openweathermap.org/data/2.5/uvi?{query}'
+            with urlopen(url, timeout=10) as response:
+                payload = json.loads(response.read().decode('utf-8'))
+                return {
+                    'uv_index': payload.get('value'),
+                    'uv_date': payload.get('date_iso'),
+                }
+        except HTTPError as exc:
+            message = _extract_upstream_message(exc)
+            raise WeatherAdapterError(message, exc.code)
+        except (URLError, TimeoutError, json.JSONDecodeError):
+            raise WeatherAdapterError('Failed to fetch UV index data.', 502)
+
+    def get_air_pollution(self, lat: float, lon: float) -> dict:
+        """Fetch Air Quality Index data from OpenWeatherMap"""
+        try:
+            query = urlencode({'lat': lat, 'lon': lon, 'appid': self.api_key})
+            url = f'https://api.openweathermap.org/data/2.5/air_pollution?{query}'
+            with urlopen(url, timeout=10) as response:
+                payload = json.loads(response.read().decode('utf-8'))
+                if 'list' in payload and len(payload['list']) > 0:
+                    current = payload['list'][0]
+                    aqi = current.get('main', {}).get('aqi')
+                    components = current.get('components', {})
+                    return {
+                        'aqi': aqi,
+                        'co': components.get('co'),
+                        'no': components.get('no'),
+                        'no2': components.get('no2'),
+                        'o3': components.get('o3'),
+                        'so2': components.get('so2'),
+                        'pm2_5': components.get('pm2_5'),
+                        'pm10': components.get('pm10'),
+                        'nh3': components.get('nh3'),
+                    }
+                return {'aqi': None}
+        except HTTPError as exc:
+            message = _extract_upstream_message(exc)
+            raise WeatherAdapterError(message, exc.code)
+        except (URLError, TimeoutError, json.JSONDecodeError):
+            raise WeatherAdapterError('Failed to fetch air pollution data.', 502)
