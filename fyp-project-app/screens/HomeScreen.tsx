@@ -176,6 +176,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
+    paddingTop: 100,
     gap: 14,
     paddingBottom: 30,
   },

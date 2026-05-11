@@ -84,8 +84,8 @@ export function AppNavigator() {
               component={BottomTabs}
               options={{ headerShown: false }}
             />
-            <Stack.Screen name="AddTask" component={AddTaskScreen} options={{ title: 'Add Task' }} />
-            <Stack.Screen name="AddHabit" component={AddHabitScreen} options={{ title: 'Add Habit' }} />
+            <Stack.Screen name="AddTask" component={AddTaskScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="AddHabit" component={AddHabitScreen} options={{ headerShown: false }} />
             <Stack.Screen name="AllHabits" component={AllHabitsScreen} options={{ title: 'All Habits' }} />
             <Stack.Screen name="HabitAnalytics" component={HabitAnalyticsScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Calendar" component={CalendarScreen} options={{ title: 'Calendar' }} />

@@ -58,10 +58,10 @@ export function BottomTabs() {
           return <Ionicons name={iconName} size={size} color={color} />;
         },
       })}>
-      <Tab.Screen name="Dashboard" component={HomeScreen} />
-      <Tab.Screen name="Tasks" component={TasksScreen} />
+      <Tab.Screen name="Dashboard" component={HomeScreen} options={{ headerShown: false }} />
+      <Tab.Screen name="Tasks" component={TasksScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Habits" component={HabitsScreen} options={{ headerShown: false }} />
-      <Tab.Screen name="Weather" component={WeatherScreen} />
+      <Tab.Screen name="Weather" component={WeatherScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );

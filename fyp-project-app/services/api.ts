@@ -17,20 +17,20 @@ function resolveBackendUrl() {
 
   const host = typeof hostUri === 'string' ? hostUri.split(':')[0] : null;
   if (host) {
-    return `http://${host}:8000`;
+    return 'https://erasure-riveter-overcome.ngrok-free.dev';
   }
 
   // Android emulator needs 10.0.2.2 for host machine loopback.
   if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:8000';
+    return 'https://erasure-riveter-overcome.ngrok-free.dev';
   }
 
   // iOS simulator can reach the host machine via localhost.
   if (Platform.OS === 'ios') {
-    return 'http://127.0.0.1:8000';
+    return 'https://erasure-riveter-overcome.ngrok-free.dev';
   }
 
-  return 'http://127.0.0.1:8000';
+  return 'https://erasure-riveter-overcome.ngrok-free.dev';
 }
 
 export const api = axios.create({

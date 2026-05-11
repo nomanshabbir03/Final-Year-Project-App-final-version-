@@ -30,6 +30,8 @@ class TaskSerializer(serializers.ModelSerializer):
 	time_spent_seconds = serializers.ReadOnlyField()
 	progress_percentage = serializers.ReadOnlyField()
 	deadline = serializers.DateField(required=False, allow_null=True)
+	description = serializers.CharField(required=False, allow_blank=True)
+	email_reminder_enabled = serializers.BooleanField(required=False)
 	
 	class Meta:
 		model = Task

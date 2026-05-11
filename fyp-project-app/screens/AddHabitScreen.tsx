@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Pressable,
   StyleSheet,
   Text,
@@ -29,6 +30,18 @@ export function AddHabitScreen() {
   const [category, setCategory] = useState<HabitCategory>('Other');
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // Handle Android hardware back button
+  useEffect(() => {
+    const backAction = () => {
+      navigation.goBack();
+      return true; // Prevent default back behavior
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove(); // Cleanup on unmount
+  }, []);
+
   const handleAddHabit = async () => {
     setLocalError(null);
     const trimmed = name.trim();
@@ -53,13 +66,14 @@ export function AddHabitScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={handleGoBack}>
-          <Text style={styles.backButtonText}>← Back</Text>
+      <View style={styles.modalHeader}>
+        <Pressable onPress={handleGoBack}>
+          <Text style={styles.backButton}>← Back</Text>
         </Pressable>
-        <Text style={styles.title}>Add New Habit</Text>
+        <Text style={styles.modalTitle}>Add New Habit</Text>
+        <View style={styles.placeholder} />
       </View>
-
+      
       <View style={styles.formCard}>
         <Text style={styles.label}>Habit Name</Text>
         <TextInput
@@ -124,55 +138,58 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.bgLight,
   },
-  header: {
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 4,
+    paddingVertical: 12,
   },
   backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  backButtonText: {
     fontSize: 16,
-    color: Colors.primary,
     fontWeight: '600',
+    color: Colors.primary,
   },
-  title: {
-    fontSize: 28,
+  modalTitle: {
+    fontSize: 24,
     fontWeight: '700',
     color: Colors.primary,
+    textAlign: 'center',
+    flex: 1,
+  },
+  placeholder: {
+    width: 60,
   },
   formCard: {
-    marginHorizontal: 16,
     backgroundColor: Colors.surfaceLight,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    padding: 12,
-    gap: 8,
+    padding: 16,
+    gap: 16,
   },
   label: {
-    color: Colors.textSecondary,
+    fontSize: 14,
     fontWeight: '600',
-    fontSize: 13,
+    color: Colors.primary,
   },
   input: {
     height: 42,
     borderWidth: 1,
     borderColor: Colors.borderLight,
     borderRadius: 8,
-    backgroundColor: Colors.surfaceLight,
-    paddingHorizontal: 10,
+    backgroundColor: Colors.white,
+    paddingHorizontal: 12,
     fontSize: 16,
+    fontWeight: '400',
+    color: Colors.textPrimary,
   },
   pickerWrap: {
     borderWidth: 1,
     borderColor: Colors.borderLight,
     borderRadius: 8,
-    backgroundColor: '#ffffff',
-    minHeight: 50,
+    backgroundColor: Colors.white,
+    height: 42,
     justifyContent: 'center',
   },
   picker: {
@@ -185,7 +202,7 @@ const styles = StyleSheet.create({
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginTop: 8,
   },
   addButtonDisabled: {
     backgroundColor: Colors.primaryLight,

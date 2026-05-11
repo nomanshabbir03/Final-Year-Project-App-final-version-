@@ -46,7 +46,7 @@ class Task(models.Model):
 	]
 
 	title = models.CharField(max_length=255)
-	description = models.TextField(blank=True)
+	description = models.TextField(blank=True, null=True)
 	category = models.CharField(max_length=100, blank=True)
 	priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
 	status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
@@ -55,7 +55,7 @@ class Task(models.Model):
 	time_slot_start = models.DateTimeField(null=True, blank=True)
 	time_slot_end = models.DateTimeField(null=True, blank=True)
 	links = models.JSONField(default=list, blank=True)
-	time_spent = models.DurationField(null=True, blank=True)
+	time_spent = models.IntegerField(default=0, null=True, blank=True)
 	progress_percentage = models.IntegerField(default=0)
 	email_reminder_enabled = models.BooleanField(default=False)
 	user = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)

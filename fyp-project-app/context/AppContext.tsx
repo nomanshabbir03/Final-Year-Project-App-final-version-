@@ -199,6 +199,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setTasks((prev) => [created as unknown as Task, ...prev]);
       return true;
     } catch (error) {
+      console.log('Backend error response:', error.response?.data);
       console.warn('Failed to create task in backend', error);
       setTasksError(toApiErrorMessage(error, 'Could not create task. Please try again.'));
       return false;

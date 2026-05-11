@@ -749,6 +749,7 @@ const styles = StyleSheet.create({
   backgroundOverlay: {
     flex: 1,
     backgroundColor: 'rgba(244, 250, 245, 0.82)',
+    paddingTop: 40,
   },
   hero: {
     gap: 6,
