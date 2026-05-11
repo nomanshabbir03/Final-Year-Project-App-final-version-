@@ -1,4 +1,5 @@
 export type RootStackParamList = {
+  Splash: undefined;
   Onboarding: undefined;
   Login: undefined;
   Signup: undefined;
@@ -11,6 +12,14 @@ export type RootStackParamList = {
   Calendar: undefined;
   Reports: undefined;
   TaskDetail: { taskId: string };
+  PrayerTime: undefined;
+  Qibla: undefined;
+  AdhanSettings: undefined;
+  Profile: undefined;
+  Medication: undefined;
+  AddMedication: undefined;
+  MedicationHistory: undefined;
+  More: undefined;
 };
 
 export type MainTabParamList = {
@@ -18,5 +27,5 @@ export type MainTabParamList = {
   Tasks: undefined;
   Habits: undefined;
   Weather: undefined;
-  Profile: undefined;
+  More: undefined;
 };

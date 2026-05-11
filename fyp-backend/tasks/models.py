@@ -25,9 +25,9 @@ class TaskAttachment(models.Model):
 
 
 class Task(models.Model):
-	PRIORITY_LOW = 'Low'
-	PRIORITY_MEDIUM = 'Medium'
-	PRIORITY_HIGH = 'High'
+	PRIORITY_LOW = 'low'
+	PRIORITY_MEDIUM = 'medium'
+	PRIORITY_HIGH = 'high'
 
 	PRIORITY_CHOICES = [
 		(PRIORITY_LOW, 'Low'),
@@ -58,6 +58,7 @@ class Task(models.Model):
 	time_spent = models.IntegerField(default=0, null=True, blank=True)
 	progress_percentage = models.IntegerField(default=0)
 	email_reminder_enabled = models.BooleanField(default=False)
+	attachment = models.FileField(upload_to='task_attachments/', blank=True, null=True)
 	user = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
 	created_at = models.DateTimeField(auto_now_add=True)
 	updated_at = models.DateTimeField(auto_now=True)

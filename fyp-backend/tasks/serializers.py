@@ -27,6 +27,7 @@ class TaskAttachmentSerializer(serializers.ModelSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
 	attachments = TaskAttachmentSerializer(many=True, read_only=True)
+	attachment = serializers.FileField(required=False, allow_null=True)
 	time_spent_seconds = serializers.ReadOnlyField()
 	progress_percentage = serializers.ReadOnlyField()
 	deadline = serializers.DateField(required=False, allow_null=True)
@@ -51,6 +52,7 @@ class TaskSerializer(serializers.ModelSerializer):
 			'time_spent_seconds',
 			'progress_percentage',
 			'email_reminder_enabled',
+			'attachment',
 			'attachments',
 			'created_at',
 			'updated_at',

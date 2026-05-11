@@ -15,22 +15,24 @@ function resolveBackendUrl() {
     Constants.expoGoConfig?.debuggerHost ??
     Constants.manifest2?.extra?.expoClient?.hostUri;
 
-  const host = typeof hostUri === 'string' ? hostUri.split(':')[0] : null;
+  const BASE_URL = 'https://erasure-riveter-overcome.ngrok-free.dev';
+
+const host = typeof hostUri === 'string' ? hostUri.split(':')[0] : null;
   if (host) {
-    return 'https://erasure-riveter-overcome.ngrok-free.dev';
+    return BASE_URL;
   }
 
   // Android emulator needs 10.0.2.2 for host machine loopback.
   if (Platform.OS === 'android') {
-    return 'https://erasure-riveter-overcome.ngrok-free.dev';
+    return BASE_URL;
   }
 
-  // iOS simulator can reach the host machine via localhost.
+  // iOS simulator can reach host machine via localhost.
   if (Platform.OS === 'ios') {
-    return 'https://erasure-riveter-overcome.ngrok-free.dev';
+    return BASE_URL;
   }
 
-  return 'https://erasure-riveter-overcome.ngrok-free.dev';
+  return BASE_URL;
 }
 
 export const api = axios.create({
@@ -46,6 +48,11 @@ let requestUserId: string | null = process.env.EXPO_PUBLIC_USER_ID?.trim() || nu
 
 export function setApiAuthToken(token: string | null) {
   authToken = token;
+  if (token) {
+    api.defaults.headers.common['Authorization'] = `Token ${token}`;
+  } else {
+    delete api.defaults.headers.common['Authorization'];
+  }
 }
 
 export function setApiRequestUserId(userId: string | null) {

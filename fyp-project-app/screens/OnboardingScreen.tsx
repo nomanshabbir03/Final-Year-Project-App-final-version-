@@ -25,6 +25,16 @@ interface Slide {
 
 const slides: Slide[] = [
   {
+    emoji: '🕌',
+    title: 'Prayer Times',
+    description: 'Never miss a prayer. Get accurate daily prayer times based on your location, Qibla direction, and Ramadan timings.',
+  },
+  {
+    emoji: '💊',
+    title: 'Medication Reminder',
+    description: 'Stay on top of your health. Track medications, get timely dose reminders, and never miss a refill.',
+  },
+  {
     emoji: '✅',
     title: 'Smart Task Management',
     description: 'Organize your tasks with priorities, deadlines and calendar view.',
@@ -41,11 +51,8 @@ const slides: Slide[] = [
   },
 ];
 
-interface OnboardingScreenProps {
-  onOnboardingComplete: () => void;
-}
-
-export function OnboardingScreen({ onOnboardingComplete }: OnboardingScreenProps) {
+export function OnboardingScreen() {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
   const slidesRef = useRef<any>(null);
@@ -65,13 +72,16 @@ export function OnboardingScreen({ onOnboardingComplete }: OnboardingScreenProps
   };
 
   const handleGetStarted = async () => {
-    // Mark onboarding as complete and trigger callback
+    // Mark onboarding as complete and navigate to Login
     try {
       await AsyncStorage.setItem('onboarding_complete', 'true');
-      onOnboardingComplete();
     } catch (error) {
       console.error('Failed to save onboarding status:', error);
-      onOnboardingComplete();
+    } finally {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
     }
   };
 

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { Colors } from '../constants/theme';
@@ -20,7 +21,7 @@ import type { RootStackParamList } from '../navigation/types';
 import { requestPasswordReset, resetPassword } from '../services/authService';
 
 export function LoginScreen() {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { login } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -39,6 +40,9 @@ export function LoginScreen() {
       const result = await login(email, password);
       if (!result.ok) {
         Alert.alert('Login Failed', result.error ?? 'Unable to login.');
+      } else {
+        console.log('Login function called, navigating...');
+        navigation.replace('MainTabs');
       }
     } finally {
       setLoading(false);
@@ -99,13 +103,6 @@ export function LoginScreen() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    Alert.alert('Google Sign In', 'Coming soon.');
-  };
-
-  const handleAppleSignIn = async () => {
-    Alert.alert('Apple Sign In', 'Coming soon.');
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -118,7 +115,7 @@ export function LoginScreen() {
           <View style={styles.iconContainer}>
             <MaterialCommunityIcons name="leaf" size={22} color={Colors.white} />
           </View>
-          <Text style={styles.appName}>Personal Companion App</Text>
+          <Text style={styles.appName}>Personal Companion</Text>
           <Text style={styles.tagline}>Your daily life, simplified</Text>
         </View>
 
@@ -184,24 +181,6 @@ export function LoginScreen() {
             </Text>
           </Pressable>
 
-          {/* SECTION 4 — SOCIAL LOGIN DIVIDER */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or continue with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* SECTION 5 — SOCIAL BUTTONS */}
-          <View style={styles.socialButtonsContainer}>
-            <Pressable style={styles.socialButton} onPress={handleGoogleSignIn}>
-              <MaterialCommunityIcons name="google" size={14} color={Colors.textSecondary} />
-              <Text style={styles.socialButtonText}>Google</Text>
-            </Pressable>
-            <Pressable style={styles.socialButton} onPress={handleAppleSignIn}>
-              <MaterialCommunityIcons name="apple" size={14} color={Colors.textSecondary} />
-              <Text style={styles.socialButtonText}>Apple</Text>
-            </Pressable>
-          </View>
 
           {/* SECTION 6 — SIGNUP LINK */}
           <View style={styles.signupContainer}>
@@ -392,44 +371,6 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
 
-  // Social Divider
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 0.5,
-    backgroundColor: Colors.borderLight,
-  },
-  dividerText: {
-    fontSize: 13,
-    color: Colors.textHint,
-    marginHorizontal: 8,
-  },
-
-  // Social Buttons
-  socialButtonsContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  socialButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: 10,
-    height: 38,
-    gap: 6,
-  },
-  socialButtonText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
 
   // Signup Link
   signupContainer: {

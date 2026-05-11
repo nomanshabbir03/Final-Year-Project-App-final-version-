@@ -193,7 +193,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const created = await createTaskRequest({
         title: clean,
         description: input.description.trim(),
-        priority: input.priority === 'high' ? 'High' : input.priority === 'low' ? 'Low' : 'Medium',
+        priority: input.priority,
         deadline: input.deadline || '',
       });
       setTasks((prev) => [created as unknown as Task, ...prev]);

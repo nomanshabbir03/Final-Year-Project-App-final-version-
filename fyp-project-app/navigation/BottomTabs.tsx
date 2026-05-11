@@ -8,7 +8,7 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { TasksScreen } from '../screens/TasksScreen';
 import { HabitsScreen } from '../screens/HabitsScreen';
 import { WeatherScreen } from '../screens/WeatherScreen';
-import { ProfileScreen } from '../screens/ProfileScreen';
+import { MoreScreen } from '../screens/MoreScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -17,7 +17,7 @@ const tabIconMap: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap>
   Tasks: 'checkbox-outline',
   Habits: 'repeat-outline',
   Weather: 'partly-sunny-outline',
-  Profile: 'person-outline',
+  More: 'grid-outline',
 };
 
 export function BottomTabs() {
@@ -62,7 +62,7 @@ export function BottomTabs() {
       <Tab.Screen name="Tasks" component={TasksScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Habits" component={HabitsScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Weather" component={WeatherScreen} options={{ headerShown: false }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
+      <Tab.Screen name="More" component={MoreScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );
 }

@@ -119,6 +119,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const restoreSession = async () => {
       try {
+        // Clear tokens on every app start for demo purposes
+        await safeRemoveItem(STORAGE_KEY);
+        setApiAuthToken(null);
+        setApiRequestUserId(null);
+        setUser(null);
+        return;
+
         const raw = await safeGetItem(STORAGE_KEY);
         if (!raw) {
           return;
@@ -189,6 +196,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setApiAuthToken(nextUser.token);
       setApiRequestUserId(nextUser.userId);
       setUser(nextUser);
+      console.log('Login successful, user set:', nextUser);
+      console.log('isAuthenticated should be:', Boolean(nextUser));
       await safeSetItem(STORAGE_KEY, JSON.stringify(nextUser));
       return { ok: true };
     } catch (error) {

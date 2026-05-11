@@ -9,15 +9,18 @@ import {
   View,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { useAppContext } from '../context/AppContext';
 import { Colors } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
+import { api } from '../services/api';
 
 type AddTaskScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -35,6 +38,8 @@ export function AddTaskScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [attachment, setAttachment] = useState<any>(null);
+  const [attachmentType, setAttachmentType] = useState<'image' | 'file' | null>(null);
 
   // Handle Android hardware back button
   useEffect(() => {
@@ -68,28 +73,68 @@ export function AddTaskScreen() {
       return;
     }
 
-    const payload = {
-      title: trimmedTitle,
-      description: trimmedDescription,
-      priority,
-      deadline: deadline
-    };
-    
-    console.log('Sending payload to backend:', payload);
-
     try {
-      const ok = await addTask(payload);
-      
-      if (!ok) {
-        setLocalError('Unable to add task. Please try again.');
-        setIsSaving(false);
-        return;
-      }
+      if (attachment) {
+        const formData = new FormData();
+        formData.append('title', trimmedTitle);
+        formData.append('description', trimmedDescription || '');
+        formData.append('priority', priority);
+        formData.append('deadline', deadline);
+        
+        const uriParts = attachment.uri.split('.');
+        const fileType = uriParts[uriParts.length - 1];
+        
+        formData.append('attachment', {
+          uri: attachment.uri,
+          name: `attachment_${Date.now()}.${fileType}`,
+          type: `image/${fileType}`,
+        } as any);
 
-      // Navigate back to TasksScreen on success
-      navigation.goBack();
-    } catch (error) {
+        try {
+          const response = await api.post('/tasks/', formData, {
+            headers: { 
+              'Content-Type': 'multipart/form-data',
+              'Accept': 'application/json',
+            },
+            transformRequest: (data) => data,
+          });
+          if (response.status === 201 || response.status === 200) {
+            navigation.goBack();
+          } else {
+            setLocalError('Failed to add task. Please try again.');
+          }
+        } catch (error: any) {
+          console.log('FormData error details:', error.response?.data);
+          setLocalError('Failed to add task. Please try again.');
+        } finally {
+          setIsSaving(false);
+        }
+        return;
+      } else {
+        // Existing JSON payload logic unchanged
+        const payload = {
+          title: trimmedTitle,
+          description: trimmedDescription,
+          priority,
+          deadline: deadline
+        };
+        
+        console.log('Sending payload to backend:', payload);
+        const ok = await addTask(payload);
+        
+        if (!ok) {
+          setLocalError('Unable to add task. Please try again.');
+          setIsSaving(false);
+          return;
+        }
+
+        // Navigate back to TasksScreen on success
+        navigation.goBack();
+      }
+    } catch (error: any) {
       console.error('Error adding task:', error);
+      console.log('Error details:', error.response?.data);
+      console.log('Error status:', error.response?.status);
       setLocalError('Failed to add task. Please check your connection and try again.');
       setIsSaving(false);
     }
@@ -123,6 +168,51 @@ export function AddTaskScreen() {
 
   const handleGoBack = () => {
     navigation.goBack();
+  };
+
+  const handleCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Camera permission is required to take photos');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setAttachment(result.assets[0]);
+      setAttachmentType('image');
+    }
+  };
+
+  const handleGallery = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Media library permission is required to select photos');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setAttachment(result.assets[0]);
+      setAttachmentType('image');
+    }
+  };
+
+  const removeAttachment = () => {
+    setAttachment(null);
+    setAttachmentType(null);
   };
 
   return (
@@ -184,6 +274,33 @@ export function AddTaskScreen() {
               </Pressable>
             ))}
           </View>
+        </View>
+
+        {/* Attachment (Optional) */}
+        <View style={styles.formGroup}>
+          <Text style={styles.formLabel}>Attachment (Optional)</Text>
+          <View style={styles.attachmentButtonsContainer}>
+            <Pressable style={styles.attachmentButton} onPress={handleCamera}>
+              <Text style={styles.attachmentButtonEmoji}>📷</Text>
+              <Text style={styles.attachmentButtonText}>Camera</Text>
+            </Pressable>
+            <Pressable style={styles.attachmentButton} onPress={handleGallery}>
+              <Text style={styles.attachmentButtonEmoji}>🖼️</Text>
+              <Text style={styles.attachmentButtonText}>Gallery</Text>
+            </Pressable>
+          </View>
+          
+          {attachment && (
+            <View style={styles.attachmentPreview}>
+              <Image source={{ uri: attachment.uri }} style={styles.attachmentImage} />
+              <Pressable style={styles.removeAttachmentButton} onPress={removeAttachment}>
+                <Text style={styles.removeAttachmentText}>✕</Text>
+              </Pressable>
+              <Text style={styles.attachmentFileName}>
+                {attachment.fileName || 'Image attached ✅'}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Assign Day */}
@@ -352,5 +469,60 @@ const styles = StyleSheet.create({
     color: Colors.error,
     fontWeight: '600',
     marginTop: 4,
+  },
+  attachmentButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  attachmentButton: {
+    flex: 1,
+    height: 80,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: 8,
+    backgroundColor: Colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  attachmentButtonEmoji: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  attachmentButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  attachmentPreview: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  attachmentImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  removeAttachmentButton: {
+    position: 'absolute',
+    top: -4,
+    right: 80,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.error,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeAttachmentText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  attachmentFileName: {
+    marginTop: 8,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
 });
