@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { api, parseJsonData } from '../services/api';
+import { api, parseJsonData, toApiErrorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Colors } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
@@ -152,7 +152,7 @@ export function MedicationHistoryScreen() {
       groupLogsByDate(filtered);
     } catch (err) {
       console.error('Error fetching medication logs:', err);
-      setError('Failed to load medication history. Please try again.');
+      setError(toApiErrorMessage(err, 'Failed to load medication history. Please try again.'));
     } finally {
       setLoading(false);
       setRefreshing(false);

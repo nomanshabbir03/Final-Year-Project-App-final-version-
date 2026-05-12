@@ -21,7 +21,9 @@ export type RootStackParamList = {
   Medication: undefined;
   AddMedication: undefined;
   MedicationHistory: undefined;
+  AllMedications: undefined;
   More: undefined;
+  EditProfile: undefined;
 };
 
 export type MainTabParamList = {

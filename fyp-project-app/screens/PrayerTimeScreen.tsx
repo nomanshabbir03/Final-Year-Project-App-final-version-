@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,6 +8,10 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  Platform,
+  BackHandler,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -16,6 +20,9 @@ import type { RootStackParamList } from '../navigation/types';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 
 interface PrayerTimes {
@@ -72,11 +79,147 @@ export function PrayerTimeScreen() {
   const [fetchingPrayerTimes, setFetchingPrayerTimes] = useState(false);
   const [isRamadan, setIsRamadan] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [countdown, setCountdown] = useState<{ hours: number; minutes: number; seconds: number; label: string } | null>(null);
+  const [adhanEnabled, setAdhanEnabled] = useState(false);
+  const [isPlayingAdhan, setIsPlayingAdhan] = useState(false);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const prayerCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [cityInput, setCityInput] = useState('');
+
+  const volumeUpListenerRef = useRef<any>(null);
 
   useEffect(() => {
     requestLocationPermission();
+    loadAdhanPreference();
+    loadSavedCity();
+    
+    if (Platform.OS === 'android') {
+      setupVolumeKeyListener();
+    }
+    
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+      if (prayerCheckIntervalRef.current) {
+        clearInterval(prayerCheckIntervalRef.current);
+      }
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+      }
+      if (volumeUpListenerRef.current) {
+        volumeUpListenerRef.current.remove();
+      }
+    };
   }, []);
 
+
+  const loadSavedCity = async () => {
+    try {
+      const savedCity = await AsyncStorage.getItem('prayer_city');
+      if (savedCity) {
+        setCityName(savedCity);
+        await fetchPrayerTimesByCity(savedCity);
+      } else {
+        getCurrentLocation();
+      }
+    } catch (error) {
+      console.log('Error loading saved city:', error);
+      getCurrentLocation();
+    }
+  };
+
+  const saveCity = async (city: string) => {
+    try {
+      await AsyncStorage.setItem('prayer_city', city);
+    } catch (error) {
+      console.log('Error saving city:', error);
+    }
+  };
+
+  const handleCitySearch = async () => {
+    if (cityInput.trim()) {
+      await fetchPrayerTimesByCity(cityInput.trim());
+      await saveCity(cityInput.trim());
+      setShowLocationPicker(false);
+      setCityInput('');
+    }
+  };
+
+  const setupVolumeKeyListener = () => {
+    volumeUpListenerRef.current = BackHandler.addEventListener('hardwareBackPress', handleVolumeUp);
+  };
+
+  const handleVolumeUp = () => {
+    if (isPlayingAdhan) {
+      stopAdhan();
+      return true;
+    }
+    return false;
+  };
+
+  const loadAdhanPreference = async () => {
+    try {
+      const saved = await AsyncStorage.getItem('adhan_enabled');
+      setAdhanEnabled(saved === 'true');
+    } catch (error) {
+      console.log('Error loading Adhan preference:', error);
+    }
+  };
+
+  const toggleAdhan = async () => {
+    const newValue = !adhanEnabled;
+    setAdhanEnabled(newValue);
+    try {
+      await AsyncStorage.setItem('adhan_enabled', newValue.toString());
+    } catch (error) {
+      console.log('Error saving Adhan preference:', error);
+    }
+  };
+
+  const playAdhan = async () => {
+    if (isPlayingAdhan) return;
+    
+    try {
+      setIsPlayingAdhan(true);
+      
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://www.islamcan.com/audio/adhan/azan1.mp3' },
+        { shouldPlay: true }
+      );
+      
+      soundRef.current = sound;
+      
+      sound.setOnPlaybackStatusUpdate(async (status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setIsPlayingAdhan(false);
+          await sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.log('Error playing Adhan:', error);
+      setIsPlayingAdhan(false);
+    }
+  };
+
+  const stopAdhan = async () => {
+    if (soundRef.current) {
+      try {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      } catch (error) {
+        console.log('Error stopping Adhan:', error);
+      }
+    }
+    setIsPlayingAdhan(false);
+  };
 
   const requestLocationPermission = async () => {
     try {
@@ -158,6 +301,7 @@ export function PrayerTimeScreen() {
       if (reverseGeocode.length > 0) {
         const city = reverseGeocode[0].city || reverseGeocode[0].subregion || 'Unknown';
         setCityName(city);
+        await saveCity(city);
       }
       
       await fetchPrayerTimes(latitude, longitude);
@@ -217,7 +361,7 @@ export function PrayerTimeScreen() {
       setFetchingPrayerTimes(true);
       setLocationError(null);
       const response = await fetch(
-        `https://api.aladhan.com/v1/timingsByCity?city=${city}&country=PK&method=2`
+        `https://api.aladhan.com/v1/timingsByCity?city=${city}&country=PK&method=1`
       );
       const data = await response.json();
       
@@ -266,6 +410,156 @@ export function PrayerTimeScreen() {
   };
 
 
+  useEffect(() => {
+    if (prayerTimes) {
+      startCountdownTimer();
+      startPrayerTimeChecker();
+    }
+    
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+      if (prayerCheckIntervalRef.current) {
+        clearInterval(prayerCheckIntervalRef.current);
+      }
+    };
+  }, [prayerTimes]);
+
+  const startCountdownTimer = () => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+    }
+    
+    const updateCountdown = () => {
+      const result = calculateCountdown();
+      setCountdown(result);
+    };
+    
+    updateCountdown();
+    countdownIntervalRef.current = setInterval(updateCountdown, 1000);
+  };
+
+  const startPrayerTimeChecker = () => {
+    if (prayerCheckIntervalRef.current) {
+      clearInterval(prayerCheckIntervalRef.current);
+    }
+    
+    const checkPrayerTimes = async () => {
+      if (!adhanEnabled || !prayerTimes) return;
+      
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const currentSeconds = now.getSeconds();
+      
+      const prayers = [
+        { name: 'Fajr', time: prayerTimes.Fajr },
+        { name: 'Dhuhr', time: prayerTimes.Dhuhr },
+        { name: 'Asr', time: prayerTimes.Asr },
+        { name: 'Maghrib', time: prayerTimes.Maghrib },
+        { name: 'Isha', time: prayerTimes.Isha },
+      ];
+      
+      for (const prayer of prayers) {
+        const [hours, minutes] = prayer.time.split(':').map(Number);
+        const prayerMinutes = hours * 60 + minutes;
+        
+        if (
+          currentMinutes === prayerMinutes && 
+          currentSeconds >= 0 && 
+          currentSeconds <= 5
+        ) {
+          await playAdhan();
+          break;
+        }
+      }
+    };
+    
+    prayerCheckIntervalRef.current = setInterval(checkPrayerTimes, 60000);
+    checkPrayerTimes();
+  };
+
+  const calculateCountdown = () => {
+    if (!prayerTimes) return null;
+    
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const currentSeconds = now.getSeconds();
+    const currentTotalSeconds = currentMinutes * 60 + currentSeconds;
+    
+    const prayers = [
+      { name: 'Fajr', time: prayerTimes.Fajr, emoji: '🌙' },
+      { name: 'Dhuhr', time: prayerTimes.Dhuhr, emoji: '☀️' },
+      { name: 'Asr', time: prayerTimes.Asr, emoji: '🌤️' },
+      { name: 'Maghrib', time: prayerTimes.Maghrib, emoji: '🌅' },
+      { name: 'Isha', time: prayerTimes.Isha, emoji: '🌙' },
+    ];
+    
+    let currentPrayer = null;
+    let nextPrayer = null;
+    
+    for (let i = 0; i < prayers.length; i++) {
+      const prayer = prayers[i];
+      const [hours, minutes] = prayer.time.split(':').map(Number);
+      const prayerTotalSeconds = (hours * 60 + minutes) * 60;
+      
+      if (prayerTotalSeconds <= currentTotalSeconds) {
+        currentPrayer = prayer;
+      } else {
+        nextPrayer = prayer;
+        break;
+      }
+    }
+    
+    if (currentPrayer && nextPrayer) {
+      // During active prayer time - count down to next prayer start
+      const [hours, minutes] = nextPrayer.time.split(':').map(Number);
+      const nextPrayerTotalSeconds = (hours * 60 + minutes) * 60;
+      const diffSeconds = nextPrayerTotalSeconds - currentTotalSeconds;
+      const hrs = Math.floor(diffSeconds / 3600);
+      const mins = Math.floor((diffSeconds % 3600) / 60);
+      const secs = diffSeconds % 60;
+      
+      return {
+        hours: hrs,
+        minutes: mins,
+        seconds: secs,
+        label: `${currentPrayer.name} ends in`
+      };
+    } else if (nextPrayer) {
+      // Before first prayer - count down to Fajr
+      const [hours, minutes] = nextPrayer.time.split(':').map(Number);
+      const nextPrayerTotalSeconds = (hours * 60 + minutes) * 60;
+      const diffSeconds = nextPrayerTotalSeconds - currentTotalSeconds;
+      const hrs = Math.floor(diffSeconds / 3600);
+      const mins = Math.floor((diffSeconds % 3600) / 60);
+      const secs = diffSeconds % 60;
+      
+      return {
+        hours: hrs,
+        minutes: mins,
+        seconds: secs,
+        label: `Next: ${nextPrayer.name} in`
+      };
+    } else {
+      // After Isha - count down to next day's Fajr
+      const nextDayFajr = prayers[0];
+      const [hours, minutes] = nextDayFajr.time.split(':').map(Number);
+      const prayerTotalSeconds = ((hours * 60 + minutes) * 60) + (24 * 3600);
+      const diffSeconds = prayerTotalSeconds - currentTotalSeconds;
+      const hrs = Math.floor(diffSeconds / 3600);
+      const mins = Math.floor((diffSeconds % 3600) / 60);
+      const secs = diffSeconds % 60;
+      
+      return {
+        hours: hrs,
+        minutes: mins,
+        seconds: secs,
+        label: `${currentPrayer?.name || 'Isha'} ends in`
+      };
+    }
+  };
+
   const getCurrentOrNextPrayer = () => {
     if (!prayerTimes) return null;
     
@@ -280,15 +574,17 @@ export function PrayerTimeScreen() {
       { name: 'Isha', time: prayerTimes.Isha, emoji: '🌙' },
     ];
     
+    let currentPrayer = null;
+    
     for (const prayer of prayers) {
       const [hours, minutes] = prayer.time.split(':').map(Number);
       const prayerTime = hours * 60 + minutes;
-      if (prayerTime > currentTime) {
-        return prayer.name;
+      if (prayerTime <= currentTime) {
+        currentPrayer = prayer.name; // keep updating — last one wins
       }
     }
     
-    return 'Fajr'; // Next day's Fajr
+    return currentPrayer; // null means before Fajr
   };
 
   const formatTime = (time: string) => {
@@ -343,21 +639,44 @@ export function PrayerTimeScreen() {
         </View>
       ) : prayerTimes && hijriDate ? (
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* Date Badges */}
-          <View style={styles.dateRow}>
-            <View style={styles.dateBadge}>
-              <Text style={styles.dateLabel}>Gregorian</Text>
-              <Text style={styles.dateText}>
+          {/* Location and Date Row */}
+          <View style={styles.locationDateRow}>
+            <View style={styles.locationContainer}>
+              <Text style={styles.locationName}>{cityName}</Text>
+              <Pressable style={styles.locationIcon} onPress={() => setShowLocationPicker(true)}>
+                <Ionicons name="locate" size={20} color={Colors.primary} />
+              </Pressable>
+            </View>
+            <View style={styles.dateStack}>
+              <Text style={styles.dateTextSmall}>
                 {hijriDate.gregorian.day} {(hijriDate.gregorian.month as any).en} {hijriDate.gregorian.year}
               </Text>
-            </View>
-            <View style={styles.dateBadge}>
-              <Text style={styles.dateLabel}>Hijri</Text>
-              <Text style={styles.dateText}>
+              <Text style={styles.dateTextSmall}>
                 {hijriDate.hijri.day} {(hijriDate.hijri.month as any).en} {hijriDate.hijri.year} AH
               </Text>
             </View>
           </View>
+
+          {/* Countdown Timer Card */}
+          {countdown && (
+            <View style={styles.countdownCard}>
+              <Text style={styles.countdownLabel}>{countdown.label}</Text>
+              <View style={styles.countdownTimeRow}>
+                {countdown.hours > 0 && (
+                  <>
+                    <Text style={styles.countdownTime}>{countdown.hours}</Text>
+                    <Text style={styles.countdownUnit}>hr</Text>
+                    <Text style={styles.countdownSeparator}>:</Text>
+                  </>
+                )}
+                <Text style={styles.countdownTime}>{countdown.minutes}</Text>
+                <Text style={styles.countdownUnit}>min</Text>
+                <Text style={styles.countdownSeparator}>:</Text>
+                <Text style={styles.countdownTime}>{countdown.seconds}</Text>
+                <Text style={styles.countdownUnit}>sec</Text>
+              </View>
+            </View>
+          )}
 
           {/* Ramadan Card */}
           {isRamadan && (
@@ -380,8 +699,6 @@ export function PrayerTimeScreen() {
             </View>
           )}
 
-          {/* City Name */}
-          <Text style={styles.cityName}>{cityName}</Text>
 
           {/* Prayer Times */}
           <View style={styles.prayerContainer}>
@@ -408,21 +725,14 @@ export function PrayerTimeScreen() {
             ))}
           </View>
 
-          {/* Notification Status */}
-          <View style={styles.notificationContainer}>
-            {notificationsEnabled ? (
-              <View style={styles.notificationCard}>
-                <Text style={styles.notificationText}>✅ Prayer notifications are active</Text>
-              </View>
-            ) : (
-              <View style={styles.notificationCard}>
-                <Text style={styles.notificationText}>🔔 Notifications not enabled</Text>
-                <Pressable style={styles.enableButton} onPress={enableNotifications}>
-                  <Text style={styles.enableButtonText}>Enable</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
+
+          {isPlayingAdhan && Platform.OS === 'ios' && (
+            <View style={styles.stopAdhanContainer}>
+              <Pressable style={styles.stopAdhanButton} onPress={stopAdhan}>
+                <Text style={styles.stopAdhanText}>⏹️ Stop Adhan</Text>
+              </Pressable>
+            </View>
+          )}
 
           {fetchingPrayerTimes && (
             <View style={styles.refreshingOverlay}>
@@ -436,6 +746,45 @@ export function PrayerTimeScreen() {
           <Pressable style={styles.fetchButton} onPress={() => location ? fetchPrayerTimes(location.latitude, location.longitude) : {}}>
             <Text style={styles.fetchButtonText}>Retry</Text>
           </Pressable>
+        </View>
+      )}
+
+      {/* LOCATION PICKER - absolute overlay */}
+      {showLocationPicker && (
+        <View style={styles.pickerOverlay}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.pickerOverlay}
+          >
+            <View style={styles.pickerSheet}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>Change Location</Text>
+                <Pressable onPress={() => setShowLocationPicker(false)}>
+                  <Text style={styles.closeText}>Close</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.searchRow}>
+                <TextInput
+                  value={cityInput}
+                  onChangeText={setCityInput}
+                  placeholder="Enter city name"
+                  style={styles.input}
+                  autoCapitalize="words"
+                />
+                <Pressable style={styles.searchButton} onPress={handleCitySearch} disabled={fetchingPrayerTimes}>
+                  <Text style={styles.searchButtonText}>Search</Text>
+                </Pressable>
+              </View>
+
+              <Pressable style={styles.locationButton} onPress={async () => {
+                await getCurrentLocation();
+                setShowLocationPicker(false);
+              }} disabled={fetchingPrayerTimes}>
+                <Text style={styles.locationButtonText}>Use Device Location</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       )}
     </SafeAreaView>
@@ -555,6 +904,186 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 12,
   },
+  locationDateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  locationName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
+    flex: 1,
+  },
+  locationIcon: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    marginLeft: 8,
+  },
+  dateStack: {
+    alignItems: 'flex-end',
+    flex: 1,
+  },
+  dateTextSmall: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 2,
+  },
+  countdownCard: {
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  countdownLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  countdownTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countdownTime: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#ffffff',
+    minWidth: 40,
+    textAlign: 'center',
+  },
+  countdownUnit: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    marginHorizontal: 4,
+  },
+  countdownSeparator: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#cbd5e1',
+    marginHorizontal: 8,
+  },
+  stopAdhanContainer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  stopAdhanButton: {
+    backgroundColor: '#ef4444',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  stopAdhanText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  pickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    backgroundColor: Colors.surfaceLight,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  pickerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  closeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  input: {
+    flex: 1,
+    height: 48,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: Colors.textPrimary,
+    backgroundColor: Colors.white,
+  },
+  searchButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  searchButtonText: {
+    color: Colors.white,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  locationButton: {
+    backgroundColor: Colors.primarySurface,
+    borderRadius: 8,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  locationButtonText: {
+    color: Colors.primary,
+    fontWeight: '700',
+    fontSize: 16,
+  },
   dateBadge: {
     flex: 1,
     backgroundColor: Colors.surfaceLight,
@@ -573,13 +1102,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: Colors.primary,
-  },
-  cityName: {
-    fontSize: 16,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 20,
-    paddingHorizontal: 16,
   },
   prayerContainer: {
     paddingHorizontal: 16,
@@ -685,42 +1207,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontStyle: 'italic',
-  },
-  notificationContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  notificationCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  notificationText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  enableButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  enableButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 14,
   },
 });

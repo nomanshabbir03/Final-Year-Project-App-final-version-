@@ -27,6 +27,8 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { MedicationScreen } from '../screens/MedicationScreen';
 import { AddMedicationScreen } from '../screens/AddMedicationScreen';
 import { MedicationHistoryScreen } from '../screens/MedicationHistoryScreen';
+import { AllMedicationsScreen } from '../screens/AllMedicationsScreen';
+import { EditProfileScreen } from '../screens/EditProfileScreen';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 
@@ -103,9 +105,11 @@ export function AppNavigator() {
         <Stack.Screen name="Qibla" component={QiblaScreen} options={{ headerShown: false }} />
         <Stack.Screen name="AdhanSettings" component={AdhanSettingsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Medication" component={MedicationScreen} options={{ headerShown: false }} />
         <Stack.Screen name="AddMedication" component={AddMedicationScreen} options={{ headerShown: false }} />
         <Stack.Screen name="MedicationHistory" component={MedicationHistoryScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="AllMedications" component={AllMedicationsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Reports" component={ReportsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="More" component={MoreScreen} options={{ headerShown: false }} />
       </Stack.Navigator>

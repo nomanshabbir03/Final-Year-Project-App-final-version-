@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { api, parseJsonData } from '../services/api';
+import { api, parseJsonData, toApiErrorMessage } from '../services/api';
 import { Colors } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -102,10 +103,19 @@ export function AddMedicationScreen() {
       }
 
       // Navigate back to MedicationScreen on success
-      navigation.goBack();
+      Alert.alert(
+        'Success',
+        'Medication added successfully!',
+        [
+          { 
+            text: 'OK', 
+            onPress: () => navigation.goBack() 
+          }
+        ]
+      );
     } catch (error) {
       console.error('Error adding medication:', error);
-      setLocalError('Failed to add medication. Please check your connection and try again.');
+      setLocalError(toApiErrorMessage(error, 'Failed to add medication. Please check your connection and try again.'));
       setIsSaving(false);
     }
   };

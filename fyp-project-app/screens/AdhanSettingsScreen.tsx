@@ -21,6 +21,7 @@ interface AdhanOption {
 export function AdhanSettingsScreen() {
   const navigation = useNavigation();
   const [selectedAdhan, setSelectedAdhan] = useState('adhan_makkah');
+  const [adhanEnabled, setAdhanEnabled] = useState(false);
 
   const adhanOptions: AdhanOption[] = [
     { id: 'adhan_makkah', label: 'Makkah Adhan', description: 'Classic Adhan from Masjid al-Haram' },
@@ -31,17 +32,30 @@ export function AdhanSettingsScreen() {
   ];
 
   useEffect(() => {
-    loadSavedPreference();
+    loadSavedPreferences();
   }, []);
 
-  const loadSavedPreference = async () => {
+  const loadSavedPreferences = async () => {
     try {
       const savedAdhan = await AsyncStorage.getItem('selected_adhan');
       if (savedAdhan) {
         setSelectedAdhan(savedAdhan);
       }
+      
+      const adhanEnabled = await AsyncStorage.getItem('adhan_enabled');
+      setAdhanEnabled(adhanEnabled === 'true');
     } catch (error) {
-      console.log('Error loading Adhan preference:', error);
+      console.log('Error loading Adhan preferences:', error);
+    }
+  };
+
+  const toggleAdhanEnabled = async () => {
+    const newValue = !adhanEnabled;
+    setAdhanEnabled(newValue);
+    try {
+      await AsyncStorage.setItem('adhan_enabled', newValue.toString());
+    } catch (error) {
+      console.log('Error saving Adhan enabled preference:', error);
     }
   };
 
@@ -78,6 +92,20 @@ export function AdhanSettingsScreen() {
       {/* Title */}
       <Text style={styles.title}>Adhan Settings</Text>
       <Text style={styles.subtitle}>Choose your preferred Adhan sound for prayer notifications</Text>
+
+      {/* Adhan Enable Toggle */}
+      <View style={styles.toggleContainer}>
+        <View style={styles.toggleInfo}>
+          <Text style={styles.toggleLabel}>Play Adhan at prayer times</Text>
+          <Text style={styles.toggleDescription}>Automatically play Adhan audio when prayer time begins</Text>
+        </View>
+        <Pressable 
+          style={[styles.toggleButton, adhanEnabled && styles.toggleButtonActive]} 
+          onPress={toggleAdhanEnabled}
+        >
+          <View style={[styles.toggleKnob, adhanEnabled && styles.toggleKnobActive]} />
+        </Pressable>
+      </View>
 
       {/* Adhan Options */}
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -126,6 +154,61 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.bgLight,
     paddingTop: 40,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: Colors.textPrimary,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  toggleInfo: {
+    flex: 1,
+  },
+  toggleLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  toggleDescription: {
+    fontSize: 14,
+    color: '#6b7280',
+    lineHeight: 18,
+  },
+  toggleButton: {
+    width: 48,
+    height: 28,
+    backgroundColor: '#d1d5db',
+    borderRadius: 14,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  toggleButtonActive: {
+    backgroundColor: Colors.primary,
+  },
+  toggleKnob: {
+    width: 20,
+    height: 20,
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    shadowColor: Colors.textPrimary,
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  toggleKnobActive: {
+    alignSelf: 'flex-end',
   },
   backButton: {
     paddingHorizontal: 16,

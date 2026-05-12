@@ -5,33 +5,13 @@ import { Platform } from 'react-native';
 function resolveBackendUrl() {
   const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
   if (envUrl) {
+    console.log('Using backend URL from environment:', envUrl);
     return envUrl;
   }
 
-  // In Expo Go/dev, infer LAN IP from Expo host and use backend port 8000.
-  // This is required for physical devices (e.g., iPhone) to reach your computer.
-  const hostUri =
-    Constants.expoConfig?.hostUri ??
-    Constants.expoGoConfig?.debuggerHost ??
-    Constants.manifest2?.extra?.expoClient?.hostUri;
-
-  const BASE_URL = 'https://erasure-riveter-overcome.ngrok-free.dev';
-
-const host = typeof hostUri === 'string' ? hostUri.split(':')[0] : null;
-  if (host) {
-    return BASE_URL;
-  }
-
-  // Android emulator needs 10.0.2.2 for host machine loopback.
-  if (Platform.OS === 'android') {
-    return BASE_URL;
-  }
-
-  // iOS simulator can reach host machine via localhost.
-  if (Platform.OS === 'ios') {
-    return BASE_URL;
-  }
-
+  // Fallback for development if environment variable is not set
+  const BASE_URL = 'http://172.21.2.208:8000';
+  console.log('Using fallback backend URL:', BASE_URL);
   return BASE_URL;
 }
 
