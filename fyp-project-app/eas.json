@@ -8,7 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://personalcompanion.pythonanywhere.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://erasure-riveter-overcome.ngrok-free.dev"
       }
     },
     "preview": {
@@ -17,13 +17,13 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://personalcompanion.pythonanywhere.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://erasure-riveter-overcome.ngrok-free.dev"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://personalcompanion.pythonanywhere.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://erasure-riveter-overcome.ngrok-free.dev"
       }
     }
   },
