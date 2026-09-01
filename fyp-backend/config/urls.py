@@ -31,6 +31,7 @@ def api_root(_request):
                 '/habits/',
                 '/weather/',
                 '/medications/',
+                '/api/budget/',
             ],
         }
     )
@@ -43,6 +44,7 @@ urlpatterns = [
     path('', include('habits.urls')),
     path('', include('weather.urls')),
     path('', include('medications.urls')),
+    path('api/budget/', include('budget.urls')),
 ]
 
 if settings.DEBUG:

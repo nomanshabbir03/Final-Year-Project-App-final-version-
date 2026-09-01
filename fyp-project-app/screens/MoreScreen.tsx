@@ -27,6 +27,13 @@ export function MoreScreen() {
       screen: 'Medication' as keyof RootStackParamList,
     },
     {
+      id: 'budget',
+      emoji: '💰',
+      title: 'Budget',
+      description: 'Track income, expenses & spending',
+      screen: 'Budget' as keyof RootStackParamList,
+    },
+    {
       id: 'profile',
       emoji: '👤',
       title: 'Profile',
@@ -40,6 +47,8 @@ export function MoreScreen() {
       navigation.navigate('PrayerTime');
     } else if (screen === 'Medication') {
       navigation.navigate('Medication');
+    } else if (screen === 'Budget') {
+      navigation.navigate('Budget');
     } else if (screen === 'Profile') {
       navigation.navigate('Profile');
     }

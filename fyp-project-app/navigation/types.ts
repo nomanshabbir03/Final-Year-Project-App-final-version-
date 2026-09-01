@@ -1,3 +1,5 @@
+import type { TransactionDto } from '../services/budgetService';
+
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
@@ -24,6 +26,9 @@ export type RootStackParamList = {
   AllMedications: undefined;
   More: undefined;
   EditProfile: undefined;
+  Budget: undefined;
+  AddTransaction: { transaction?: TransactionDto } | undefined;
+  BudgetSettings: undefined;
 };
 
 export type MainTabParamList = {

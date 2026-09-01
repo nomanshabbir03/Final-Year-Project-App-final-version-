@@ -29,6 +29,9 @@ import { AddMedicationScreen } from '../screens/AddMedicationScreen';
 import { MedicationHistoryScreen } from '../screens/MedicationHistoryScreen';
 import { AllMedicationsScreen } from '../screens/AllMedicationsScreen';
 import { EditProfileScreen } from '../screens/EditProfileScreen';
+import { BudgetScreen } from '../screens/BudgetScreen';
+import { AddTransactionScreen } from '../screens/AddTransactionScreen';
+import { BudgetSettingsScreen } from '../screens/BudgetSettingsScreen';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 
@@ -112,6 +115,9 @@ export function AppNavigator() {
         <Stack.Screen name="AllMedications" component={AllMedicationsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Reports" component={ReportsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="More" component={MoreScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Budget" component={BudgetScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="AddTransaction" component={AddTransactionScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="BudgetSettings" component={BudgetSettingsScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
