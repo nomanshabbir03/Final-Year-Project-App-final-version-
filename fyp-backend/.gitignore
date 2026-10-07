@@ -56,3 +56,6 @@ Thumbs.db
 
 # Node modules (if any)
 node_modules/
+
+# Local env copies that may contain secrets
+_env*

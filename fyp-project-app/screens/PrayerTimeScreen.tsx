@@ -20,7 +20,7 @@ import type { RootStackParamList } from '../navigation/types';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
@@ -82,7 +82,7 @@ export function PrayerTimeScreen() {
   const [countdown, setCountdown] = useState<{ hours: number; minutes: number; seconds: number; label: string } | null>(null);
   const [adhanEnabled, setAdhanEnabled] = useState(false);
   const [isPlayingAdhan, setIsPlayingAdhan] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const prayerCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -107,7 +107,7 @@ export function PrayerTimeScreen() {
         clearInterval(prayerCheckIntervalRef.current);
       }
       if (soundRef.current) {
-        soundRef.current.unloadAsync();
+        soundRef.current.remove();
       }
       if (volumeUpListenerRef.current) {
         volumeUpListenerRef.current.remove();
@@ -186,22 +186,24 @@ export function PrayerTimeScreen() {
       setIsPlayingAdhan(true);
       
       if (soundRef.current) {
-        await soundRef.current.unloadAsync();
+        soundRef.current.remove();
       }
-      
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://www.islamcan.com/audio/adhan/azan1.mp3' },
-        { shouldPlay: true }
-      );
-      
+
+      const sound = createAudioPlayer({ uri: 'https://www.islamcan.com/audio/adhan/azan1.mp3' });
+
       soundRef.current = sound;
-      
-      sound.setOnPlaybackStatusUpdate(async (status) => {
-        if (status.isLoaded && status.didJustFinish) {
+
+      sound.addListener('playbackStatusUpdate', (status: AudioStatus) => {
+        if (status.didJustFinish) {
           setIsPlayingAdhan(false);
-          await sound.unloadAsync();
+          sound.remove();
+          if (soundRef.current === sound) {
+            soundRef.current = null;
+          }
         }
       });
+
+      sound.play();
     } catch (error) {
       console.log('Error playing Adhan:', error);
       setIsPlayingAdhan(false);
@@ -211,8 +213,8 @@ export function PrayerTimeScreen() {
   const stopAdhan = async () => {
     if (soundRef.current) {
       try {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
+        soundRef.current.pause();
+        soundRef.current.remove();
         soundRef.current = null;
       } catch (error) {
         console.log('Error stopping Adhan:', error);

@@ -9,8 +9,17 @@ function resolveBackendUrl() {
     return envUrl;
   }
 
-  // Fallback for development if environment variable is not set
-  const BASE_URL = 'http://172.21.2.208:8000';
+  // In development, the backend runs on the same computer that serves the Expo bundle,
+  // so reuse that host (works for every teammate without editing IP addresses).
+  const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
+  if (devHost) {
+    const BASE_URL = `http://${devHost}:8080`;
+    console.log('Using backend URL from Expo dev host:', BASE_URL);
+    return BASE_URL;
+  }
+
+  // Fallback when no dev host is available (e.g. web on the same machine)
+  const BASE_URL = 'http://localhost:8080';
   console.log('Using fallback backend URL:', BASE_URL);
   return BASE_URL;
 }
