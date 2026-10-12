@@ -9,6 +9,7 @@ import {
   signup as signupRequest,
   updateProfile as updateProfileRequest,
 } from '../services/authService';
+import { cancelAllMedicationReminders } from '../services/medicationReminderService';
 
 type AuthUser = {
   email: string;
@@ -220,21 +221,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const payload = await signupRequest(cleanEmail, password, fullName);
-      const nextUser = {
-        email: payload.email,
-        token: payload.token,
-        userId: payload.user_id,
-        fullName: payload.full_name ?? '',
-        avatarUrl: payload.avatar_url ?? '',
-        bio: payload.bio ?? '',
-        selectedCity: payload.selected_city ?? '',
-      };
-
-      setApiAuthToken(nextUser.token);
-      setApiRequestUserId(nextUser.userId);
-      setUser(nextUser);
-      await safeSetItem(STORAGE_KEY, JSON.stringify(nextUser));
+      // Only create the account; the user signs in from the Login screen afterwards.
+      await signupRequest(cleanEmail, password, fullName);
       return { ok: true };
     } catch (error) {
       return {
@@ -290,6 +278,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn('Backend logout failed, clearing local session anyway', error);
     }
 
+    await cancelAllMedicationReminders();
     setApiAuthToken(null);
     setApiRequestUserId(null);
     setUser(null);

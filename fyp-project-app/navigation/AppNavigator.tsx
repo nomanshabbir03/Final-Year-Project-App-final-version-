@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View } from 'react-native';
 
@@ -34,8 +35,13 @@ import { AddTransactionScreen } from '../screens/AddTransactionScreen';
 import { BudgetSettingsScreen } from '../screens/BudgetSettingsScreen';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
+import {
+  handleMedicationNotificationResponse,
+  refreshMedicationReminders,
+} from '../services/medicationReminderService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 const appTheme = {
   ...DefaultTheme,
@@ -55,6 +61,31 @@ export function AppNavigator() {
     }
   }, [isAuthenticated, preloadDashboardData]);
 
+  // Medication reminders: reschedule on sign in, and act on Taken / Skip / Later taps
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    refreshMedicationReminders();
+
+    const onResponse = async (response: Notifications.NotificationResponse) => {
+      const isMedication = await handleMedicationNotificationResponse(response);
+      if (isMedication && navigationRef.isReady()) {
+        navigationRef.navigate('Medication');
+      }
+    };
+
+    // A tap that launched the app before this listener existed
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        onResponse(response);
+        Notifications.clearLastNotificationResponseAsync().catch(() => undefined);
+      }
+    });
+
+    const subscription = Notifications.addNotificationResponseReceivedListener(onResponse);
+    return () => subscription.remove();
+  }, [isAuthenticated]);
+
   console.log('Navigator rendering, isAuthenticated:', isAuthenticated, 'user:', user);
 
   if (isLoading) {
@@ -66,7 +97,7 @@ export function AppNavigator() {
   }
 
   return (
-    <NavigationContainer theme={appTheme}>
+    <NavigationContainer ref={navigationRef} theme={appTheme}>
       <Stack.Navigator initialRouteName="Splash">
         <Stack.Screen 
           name="Splash" 

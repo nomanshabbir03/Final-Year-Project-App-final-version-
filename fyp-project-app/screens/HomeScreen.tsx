@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { Colors } from '../constants/theme';
 import { fetchWeatherByCity } from '../services/weatherService';
 import { api, parseJsonData } from '../services/api';
+import { isScheduledOn, type Medication } from '../services/medicationService';
 
 interface PrayerTimes {
   Fajr: string;
@@ -28,13 +29,6 @@ interface DateInfo {
   };
 }
 
-interface Medication {
-  id: number;
-  name: string;
-  dosage: string;
-  schedule_times: string[];
-  is_active: boolean;
-}
 
 type HomeScreenNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList>,
@@ -182,7 +176,7 @@ export function HomeScreen() {
     
     // Add medication times
     medications.forEach(med => {
-      if (med.is_active) {
+      if (isScheduledOn(med, now)) {
         med.schedule_times.forEach(scheduleTime => {
           const [hours, minutes] = scheduleTime.split(':').map(Number);
           const eventTime = new Date();
@@ -319,7 +313,7 @@ export function HomeScreen() {
     let nextTime: Date | null = null;
     
     medications.forEach(med => {
-      if (!med.is_active) return;
+      if (!isScheduledOn(med, now)) return;
       
       med.schedule_times.forEach(scheduleTime => {
         const [hours, minutes] = scheduleTime.split(':').map(Number);

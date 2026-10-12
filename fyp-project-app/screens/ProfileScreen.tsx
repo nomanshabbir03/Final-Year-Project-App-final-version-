@@ -24,6 +24,7 @@ import { Colors, Fonts } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 import { requestNotificationPermissions } from '../services/notificationService';
+import { formatTime12, getNextDose, listMedications, toHHMM, type Medication } from '../services/medicationService';
 import Constants from 'expo-constants';
 
 type ProfileScreenNavigationProp = CompositeNavigationProp<
@@ -45,6 +46,19 @@ export function ProfileScreen() {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const { user, logout } = useAuth();
   const { tasks, habits, fetchTasks, fetchHabits } = useAppContext();
+  const [medications, setMedications] = useState<Medication[]>([]);
+
+  const fetchMedications = async () => {
+    try {
+      setMedications(await listMedications());
+    } catch (error) {
+      console.warn('Failed to fetch medications for profile:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchMedications();
+  }, []);
   
   const [refreshing, setRefreshing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -121,22 +135,28 @@ export function ProfileScreen() {
     
     const dailyHabits = habits.filter(habit => habit.frequency === 'daily' as any);
     const habitNames = dailyHabits.slice(0, 3).map(h => h.name);
+
+    const activeMeds = medications.filter(med => med.is_active);
+    const upcoming = activeMeds
+      .map(med => ({ med, next: getNextDose(med) }))
+      .filter((item): item is { med: Medication; next: Date } => item.next !== null)
+      .sort((a, b) => a.next.getTime() - b.next.getTime())[0];
     
     setModuleStats({
       tasksActive: activeTasks.length,
       tasksDueToday: dueTodayTasks.length,
       habitsDaily: dailyHabits.length,
       habitNames,
-      medicationsCount: 0, // TODO: Connect to medication store
-      nextMedTime: '', // TODO: Calculate next medication time
-      firstMedName: '', // TODO: Get first medication name
+      medicationsCount: activeMeds.length,
+      nextMedTime: upcoming ? formatTime12(toHHMM(upcoming.next)) : '',
+      firstMedName: upcoming?.med.name ?? activeMeds[0]?.name ?? '',
     });
-  }, [tasks, habits]);
+  }, [tasks, habits, medications]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([fetchTasks(true), fetchHabits(true)]);
+      await Promise.all([fetchTasks(true), fetchHabits(true), fetchMedications()]);
     } catch (error) {
       console.warn('Failed to refresh data:', error);
     } finally {
@@ -415,8 +435,10 @@ export function ProfileScreen() {
             </View>
             <Text style={styles.rowLabel}>Medication</Text>
             <Text style={styles.rowValue}>
-              {moduleStats.medicationsCount > 0 
-                ? `${moduleStats.firstMedName} · daily at ${moduleStats.nextMedTime}`
+              {moduleStats.medicationsCount > 0
+                ? moduleStats.nextMedTime
+                  ? `${moduleStats.medicationsCount} active · ${moduleStats.firstMedName} at ${moduleStats.nextMedTime}`
+                  : `${moduleStats.medicationsCount} active`
                 : 'No medications'
               }
             </Text>

@@ -3,7 +3,7 @@ import type { TransactionDto } from '../services/budgetService';
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
-  Login: undefined;
+  Login: { email?: string } | undefined;
   Signup: undefined;
   ConfirmCode: { email?: string };
   MainTabs: undefined;
@@ -21,7 +21,7 @@ export type RootStackParamList = {
   AdhanSettings: undefined;
   Profile: undefined;
   Medication: undefined;
-  AddMedication: undefined;
+  AddMedication: { medicationId?: number } | undefined;
   MedicationHistory: undefined;
   AllMedications: undefined;
   More: undefined;
