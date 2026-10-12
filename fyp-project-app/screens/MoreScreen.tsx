@@ -34,6 +34,13 @@ export function MoreScreen() {
       screen: 'Budget' as keyof RootStackParamList,
     },
     {
+      id: 'fitness',
+      emoji: '🏃',
+      title: 'Fitness',
+      description: 'Log steps, calories, sleep & goals',
+      screen: 'Fitness' as keyof RootStackParamList,
+    },
+    {
       id: 'profile',
       emoji: '👤',
       title: 'Profile',
@@ -49,6 +56,8 @@ export function MoreScreen() {
       navigation.navigate('Medication');
     } else if (screen === 'Budget') {
       navigation.navigate('Budget');
+    } else if (screen === 'Fitness') {
+      navigation.navigate('Fitness');
     } else if (screen === 'Profile') {
       navigation.navigate('Profile');
     }
