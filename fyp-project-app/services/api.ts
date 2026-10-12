@@ -1,31 +1,43 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 
+const BACKEND_PORT = 8000;
+
+// NOTE: the Django routes are NOT all under /api (auth/, medications/, habits/ ... are at the
+// root while budget and fitness live under /api/...), and the screens already include the
+// full path in each call, so the base URL must be host:port with no /api suffix.
 function resolveBackendUrl() {
-  const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
+  const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.trim().replace(/\/+$/, '');
   if (envUrl) {
-    console.log('Using backend URL from environment:', envUrl);
-    return envUrl;
+    return { url: envUrl, source: 'EXPO_PUBLIC_BACKEND_URL' };
   }
 
-  // In development, the backend runs on the same computer that serves the Expo bundle,
-  // so reuse that host (works for every teammate without editing IP addresses).
+  // LAN mode: the backend runs on the same PC that serves the Expo bundle.
+  // Tunnel hosts (exp.direct / ngrok) point at Metro, not at the backend, so skip them.
   const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
-  if (devHost) {
-    const BASE_URL = `http://${devHost}:8080`;
-    console.log('Using backend URL from Expo dev host:', BASE_URL);
-    return BASE_URL;
+  if (devHost && !/\.(exp\.direct|ngrok[\w-]*\.\w+)$/i.test(devHost)) {
+    return { url: `http://${devHost}:${BACKEND_PORT}`, source: 'Expo dev host (hostUri)' };
   }
 
-  // Fallback when no dev host is available (e.g. web on the same machine)
-  const BASE_URL = 'http://localhost:8080';
-  console.log('Using fallback backend URL:', BASE_URL);
-  return BASE_URL;
+  // Android emulator reaches the host PC via 10.0.2.2
+  if (Platform.OS === 'android' && !Device.isDevice) {
+    return { url: `http://10.0.2.2:${BACKEND_PORT}`, source: 'Android emulator default' };
+  }
+
+  console.warn(
+    'Backend URL could not be determined. Create fyp-project-app/.env.local with ' +
+      'EXPO_PUBLIC_BACKEND_URL=http://<PC-LAN-IP>:8000 (see .env.example) and restart with `npx expo start -c`.'
+  );
+  return { url: `http://localhost:${BACKEND_PORT}`, source: 'unresolved (last-resort localhost)' };
 }
 
+const resolvedBackend = resolveBackendUrl();
+console.log(`Backend base URL: ${resolvedBackend.url} (from ${resolvedBackend.source})`);
+
 export const api = axios.create({
-  baseURL: resolveBackendUrl(),
+  baseURL: resolvedBackend.url,
   timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
@@ -118,7 +130,7 @@ export function toApiErrorMessage(error: unknown, fallback: string): string {
     }
 
     if (!error.response) {
-      return 'Cannot reach backend API. Check your network and backend URL.';
+      return `Cannot reach backend API at ${error.config?.baseURL ?? api.defaults.baseURL}. Check your network and backend URL.`;
     }
 
     return `${fallback} (HTTP ${error.response.status})`;

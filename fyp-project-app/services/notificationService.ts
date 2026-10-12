@@ -1,4 +1,4 @@
-import * as Notifications from 'expo-notifications';
+import { Notifications } from './notifications';
 
 // Configure notification handler
 Notifications.setNotificationHandler({
