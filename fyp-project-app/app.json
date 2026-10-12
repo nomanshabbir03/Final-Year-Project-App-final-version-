@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Allow this app to convert your speech to text for voice commands.",
-        "NSMicrophoneUsageDescription": "Allow this app to use the microphone for voice commands."
+        "NSMicrophoneUsageDescription": "Allow this app to use the microphone for voice commands.",
+        "NSMotionUsageDescription": "This app uses motion data to count your daily steps."
       }
     },
     "android": {
@@ -27,7 +28,8 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACTIVITY_RECOGNITION"
       ],
       "package": "com.personalcompanion.fypprojectapp"
     },
