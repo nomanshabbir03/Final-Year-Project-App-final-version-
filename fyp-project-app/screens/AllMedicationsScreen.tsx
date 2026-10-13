@@ -1,8 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -14,70 +12,32 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { api, parseJsonData, toApiErrorMessage } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { toApiErrorMessage } from '../services/api';
+import {
+  formatTime12,
+  frequencyLabel,
+  getNextDose,
+  listMedications,
+  toHHMM,
+  weeklyDayLabel,
+  type Medication,
+} from '../services/medicationService';
 import { Colors } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type AllMedicationsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-interface Medication {
-  id: number;
-  name: string;
-  dosage: string;
-  frequency: string;
-  schedule_times: string[];
-  supply_count: number;
-  refill_threshold: number;
-  notes?: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-interface MedicationLog {
-  id: number;
-  medication: number;
-  status: 'taken' | 'skipped' | 'deferred';
-  scheduled_time: string;
-  taken_at?: string;
-  notes?: string;
-  created_at: string;
-}
-
 export function AllMedicationsScreen() {
-  const { user } = useAuth();
   const navigation = useNavigation<AllMedicationsScreenNavigationProp>();
-  
+
   const [medications, setMedications] = useState<Medication[]>([]);
-  const [medicationLogs, setMedicationLogs] = useState<MedicationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchMedications();
-    fetchMedicationLogs();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      fetchMedications();
-      fetchMedicationLogs();
-    });
-    return unsubscribe;
-  }, [navigation]);
-
-  const fetchMedications = async (refresh = false) => {
+  const fetchMedications = useCallback(async () => {
     try {
-      if (!refresh) {
-        setLoading(true);
-      }
-      console.log('API base URL:', api.defaults.baseURL);
-      console.log('Full URL:', `${api.defaults.baseURL}/medications/`);
-      const response = await api.get('/medications/');
-      const data = parseJsonData(response.data);
-      setMedications(Array.isArray(data) ? data : []);
+      setMedications(await listMedications());
       setError(null);
     } catch (err) {
       setError(toApiErrorMessage(err, 'Failed to fetch medications'));
@@ -86,86 +46,22 @@ export function AllMedicationsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
-  const fetchMedicationLogs = async () => {
-    try {
-      console.log('API base URL:', api.defaults.baseURL);
-      console.log('Full URL:', `${api.defaults.baseURL}/medication-logs/`);
-      const response = await api.get('/medication-logs/');
-      const data = parseJsonData(response.data);
-      setMedicationLogs(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Error fetching medication logs:', err);
-    }
-  };
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', fetchMedications);
+    return unsubscribe;
+  }, [navigation, fetchMedications]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchMedications(true);
-    fetchMedicationLogs();
+    fetchMedications();
   };
 
-  const handleLogDose = async (medicationId: number, status: 'taken' | 'skipped' = 'taken') => {
-    try {
-      console.log('API base URL:', api.defaults.baseURL);
-      console.log('Full URL:', `${api.defaults.baseURL}/medication-logs/`);
-      const now = new Date().toISOString();
-      await api.post('/medication-logs/', {
-        medication: medicationId,
-        status,
-        scheduled_time: now,
-        taken_at: status === 'taken' ? now : undefined,
-      });
-      fetchMedicationLogs(); // Refresh logs
-      Alert.alert(
-        'Success',
-        `Medication ${status === 'taken' ? 'taken' : 'skipped'} successfully!`,
-        [{ text: 'OK' }]
-      );
-    } catch (err) {
-      const errorMessage = toApiErrorMessage(err, 'Failed to log dose');
-      Alert.alert('Error', errorMessage);
-      console.error('Error logging dose:', err);
-    }
-  };
-
-  const getNextDoseTime = (medication: Medication) => {
-    if (!medication.is_active || !medication.schedule_times || medication.schedule_times.length === 0) {
-      return null;
-    }
-    
-    const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes();
-    
-    // Sort times and find the next one
-    const sortedTimes = medication.schedule_times
-      .map(time => {
-        const [hours, minutes] = time.split(':').map(Number);
-        return hours * 60 + minutes;
-      })
-      .sort((a, b) => a - b);
-    
-    const nextTime = sortedTimes.find(time => time > currentTime) || sortedTimes[0];
-    const hours = Math.floor(nextTime / 60);
-    const minutes = nextTime % 60;
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  };
-
-  const getFrequencyDisplay = (frequency: string) => {
-    const frequencyMap: Record<string, string> = {
-      'daily': 'Daily',
-      'twice_daily': 'Twice Daily',
-      'three_times_daily': 'Three Times Daily',
-      'weekly': 'Weekly',
-      'as_needed': 'As Needed',
-    };
-    return frequencyMap[frequency] || frequency;
-  };
-
-  const needsRefill = (medication: Medication) => {
-    return medication.supply_count <= medication.refill_threshold;
+  const scheduleText = (medication: Medication) => {
+    if (medication.frequency === 'as_needed') return 'Take when needed';
+    const times = medication.schedule_times.map(formatTime12).join(', ');
+    return medication.frequency === 'weekly' ? `Every ${weeklyDayLabel(medication)} · ${times}` : times;
   };
 
   if (loading) {
@@ -184,7 +80,7 @@ export function AllMedicationsScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={() => fetchMedications(true)}>
+          <Pressable style={styles.retryButton} onPress={handleRefresh}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </Pressable>
         </View>
@@ -201,7 +97,7 @@ export function AllMedicationsScreen() {
         <Text style={styles.title}>All Medications</Text>
       </View>
 
-      <ScrollView 
+      <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -215,51 +111,50 @@ export function AllMedicationsScreen() {
           </View>
         ) : (
           <View style={styles.medicationsSection}>
+            <Text style={styles.hintText}>Tap a medication to edit, pause or delete it.</Text>
             {medications.map((medication) => {
-              const nextDoseTime = getNextDoseTime(medication);
+              const nextDose = getNextDose(medication);
               return (
-                <View key={medication.id} style={styles.medicationCard}>
+                <Pressable
+                  key={medication.id}
+                  style={[styles.medicationCard, !medication.is_active && styles.inactiveCard]}
+                  onPress={() => navigation.navigate('AddMedication', { medicationId: medication.id })}
+                >
                   <View style={styles.medicationHeader}>
                     <View style={styles.medicationInfo}>
                       <Text style={styles.medicationName}>{medication.name}</Text>
-                      <Text style={styles.medicationDosage}>{medication.dosage} • {getFrequencyDisplay(medication.frequency)}</Text>
-                      {nextDoseTime && (
-                        <Text style={styles.nextDoseTime}>Next dose: {nextDoseTime}</Text>
-                      )}
+                      <Text style={styles.medicationDosage}>
+                        {medication.dosage} • {frequencyLabel(medication.frequency)}
+                      </Text>
+                      <Text style={styles.medicationDosage}>{scheduleText(medication)}</Text>
+                      {!medication.is_active ? (
+                        <Text style={styles.pausedText}>Paused · reminders off</Text>
+                      ) : nextDose ? (
+                        <Text style={styles.nextDoseTime}>
+                          Next dose: {nextDose.toLocaleDateString('en-US', { weekday: 'short' })} {formatTime12(toHHMM(nextDose))}
+                        </Text>
+                      ) : null}
                     </View>
-                    {needsRefill(medication) && (
+                    {medication.needs_refill && (
                       <View style={styles.refillBadge}>
                         <Text style={styles.refillBadgeText}>⚠️ Low Supply</Text>
                       </View>
                     )}
                   </View>
-                  
+
                   <View style={styles.medicationStats}>
                     <Text style={styles.supplyText}>
-                      Supply: {medication.supply_count} units
+                      {medication.supply_count === null ? 'Supply not tracked' : `Supply: ${medication.supply_count} units`}
                     </Text>
-                    <Text style={styles.thresholdText}>
-                      Refill at: {medication.refill_threshold} units
-                    </Text>
+                    {medication.supply_count !== null && (
+                      <Text style={styles.thresholdText}>
+                        Refill at: {medication.refill_threshold} units
+                      </Text>
+                    )}
                   </View>
-                  
-                  {medication.is_active && (
-                    <View style={styles.actionButtons}>
-                      <Pressable 
-                        style={[styles.actionButton, styles.takeButton]} 
-                        onPress={() => handleLogDose(medication.id, 'taken')}
-                      >
-                        <Text style={styles.takeButtonText}>✓ Take</Text>
-                      </Pressable>
-                      <Pressable 
-                        style={[styles.actionButton, styles.skipButton]} 
-                        onPress={() => handleLogDose(medication.id, 'skipped')}
-                      >
-                        <Text style={styles.skipButtonText}>✕ Skip</Text>
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
+
+                  {medication.notes ? <Text style={styles.notesText}>📝 {medication.notes}</Text> : null}
+                </Pressable>
               );
             })}
           </View>
@@ -440,5 +335,22 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: '600',
     fontSize: 16,
+  },
+  hintText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+  },
+  inactiveCard: {
+    opacity: 0.6,
+  },
+  pausedText: {
+    fontSize: 13,
+    color: Colors.textHint,
+    fontWeight: '600',
+  },
+  notesText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
   },
 });

@@ -34,6 +34,14 @@ export function SignupScreen() {
         setError(result.error ?? 'Unable to create account.');
         return;
       }
+
+      const createdEmail = email.trim().toLowerCase();
+      Alert.alert(
+        'Account created',
+        'Your account has been created successfully. Please sign in to continue.',
+        [{ text: 'Go to Sign in', onPress: () => navigation.navigate('Login', { email: createdEmail }) }],
+        { cancelable: false }
+      );
     } finally {
       setLoading(false);
     }

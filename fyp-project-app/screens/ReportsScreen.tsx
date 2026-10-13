@@ -4,10 +4,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors } from '../constants/theme';
 import { useAppContext } from '../context/AppContext';
+import {
+  addDays,
+  computeAdherence,
+  listMedicationLogs,
+  listMedications,
+  startOfDay,
+  type AdherenceSummary,
+} from '../services/medicationService';
 
 const { width, height } = Dimensions.get('window');
 
 type ReportPeriod = 'daily' | 'weekly' | 'monthly';
+
+const PERIOD_DAYS: Record<ReportPeriod, number> = { daily: 1, weekly: 7, monthly: 30 };
 
 type ReportData = {
   summary: {
@@ -30,6 +40,20 @@ export function ReportsScreen() {
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('weekly');
+  const [medicationReport, setMedicationReport] = useState<AdherenceSummary | null>(null);
+
+  const fetchMedicationReport = async () => {
+    try {
+      const days = PERIOD_DAYS[reportPeriod];
+      const [medications, logs] = await Promise.all([
+        listMedications(),
+        listMedicationLogs({ from: addDays(startOfDay(new Date()), -(days - 1)) }),
+      ]);
+      setMedicationReport(medications.length ? computeAdherence(medications, logs, days) : null);
+    } catch (error) {
+      console.error('Failed to fetch medication report:', error);
+    }
+  };
 
   const fetchReportData = async () => {
     setLoading(true);
@@ -45,7 +69,40 @@ export function ReportsScreen() {
 
   useEffect(() => {
     fetchReportData();
+    fetchMedicationReport();
   }, [reportPeriod]);
+
+  const renderMedicationReport = () => {
+    if (!medicationReport) return null;
+    const { adherence, expected, taken, skipped, missed, deferred, asNeededTaken } = medicationReport;
+    return (
+      <View style={styles.chartSection}>
+        <Text style={styles.sectionTitle}>Medication adherence</Text>
+        <View style={styles.summaryCards}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Adherence</Text>
+            <Text style={styles.summaryValue}>{adherence === null ? '—' : `${adherence}%`}</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Taken</Text>
+            <Text style={styles.summaryValue}>{taken}/{expected}</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Missed</Text>
+            <Text style={[styles.summaryValue, { color: missed > 0 ? Colors.error : Colors.primary }]}>{missed}</Text>
+          </View>
+        </View>
+        <View style={styles.insightCard}>
+          <Text style={styles.insightText}>
+            💊 {expected === 0
+              ? 'No scheduled doses were due in this period.'
+              : `${taken} taken, ${skipped} skipped, ${deferred} deferred and ${missed} not logged out of ${expected} scheduled doses.`}
+            {asNeededTaken > 0 ? ` Plus ${asNeededTaken} as-needed dose${asNeededTaken === 1 ? '' : 's'}.` : ''}
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   const renderSummaryCards = () => {
     if (!reportData) return null;
@@ -149,7 +206,7 @@ export function ReportsScreen() {
           <Text style={styles.backButton}>←</Text>
         </Pressable>
         <Text style={styles.headerTitle}>Reports</Text>
-        <Pressable onPress={fetchReportData}>
+        <Pressable onPress={() => { fetchReportData(); fetchMedicationReport(); }}>
           <Text style={styles.refreshButton}>↻</Text>
         </Pressable>
       </View>
@@ -178,6 +235,9 @@ export function ReportsScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Summary Cards */}
         {renderSummaryCards()}
+
+        {/* Medication adherence (Medication Reminder module) */}
+        {renderMedicationReport()}
 
         {/* Chart */}
         <View style={styles.chartSection}>

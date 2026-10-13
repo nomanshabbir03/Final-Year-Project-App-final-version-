@@ -257,8 +257,13 @@ export function PrayerTimeScreen() {
   };
 
   const schedulePrayerNotifications = async (prayers: PrayerTimes) => {
-    // Cancel all existing scheduled notifications
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    // Replace only prayer notifications; medication and habit reminders must keep running
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(
+      scheduled
+        .filter((request) => request.identifier.startsWith('prayer-') || request.content.title?.startsWith('🕌'))
+        .map((request) => Notifications.cancelScheduledNotificationAsync(request.identifier))
+    );
     
     const prayerNames = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const;
     
@@ -267,6 +272,7 @@ export function PrayerTimeScreen() {
       const [hours, minutes] = prayerTime.split(':').map(Number);
       
       await Notifications.scheduleNotificationAsync({
+        identifier: `prayer-${prayerName}`,
         content: {
           title: `🕌 Time for ${prayerName}`,
           body: `It is time for ${prayerName} prayer. ${formatTime(prayerTime)}`,
