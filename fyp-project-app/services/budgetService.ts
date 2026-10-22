@@ -12,6 +12,16 @@ export type TransactionDto = {
   date: string;
   createdAt: string;
   updatedAt: string;
+  /** Only present on the create response, when the expense hit a category budget. */
+  budgetAlert?: BudgetAlert;
+};
+
+export type BudgetAlert = {
+  level: 'warning' | 'exceeded';
+  category: string;
+  limit: string;
+  spent: string;
+  percent: number;
 };
 
 type TransactionApiDto = {
@@ -24,6 +34,7 @@ type TransactionApiDto = {
   date: string;
   created_at: string;
   updated_at: string;
+  budget_alert?: BudgetAlert;
 };
 
 export type SummaryRow = {
@@ -67,6 +78,7 @@ function normalizeTransaction(item: TransactionApiDto): TransactionDto {
     date: item.date,
     createdAt: item.created_at,
     updatedAt: item.updated_at,
+    budgetAlert: item.budget_alert,
   };
 }
 
@@ -167,4 +179,249 @@ export async function updateSettings(data: {
   const response = await api.patch('/api/budget/settings/', payload);
   const result = parseJsonData<BudgetSettingsApiDto>(response.data);
   return normalizeSettings(result);
+}
+
+export type CategoryBudgetDto = {
+  id: string;
+  category: string;
+  monthlyLimit: number;
+  /** Spent in the current month. */
+  spent: number;
+};
+
+type CategoryBudgetApiDto = {
+  id: string;
+  category: string;
+  monthly_limit: string;
+  spent: string;
+};
+
+function normalizeCategoryBudget(item: CategoryBudgetApiDto): CategoryBudgetDto {
+  return {
+    id: String(item.id),
+    category: item.category,
+    monthlyLimit: Number(item.monthly_limit),
+    spent: Number(item.spent ?? 0),
+  };
+}
+
+export async function getCategoryBudgets(): Promise<CategoryBudgetDto[]> {
+  const response = await api.get('/api/budget/category-budgets/');
+  const data = parseJsonData<unknown>(response.data);
+  const raw = Array.isArray(data) ? data : [];
+  return raw.map((item) => normalizeCategoryBudget(item as CategoryBudgetApiDto));
+}
+
+export async function createCategoryBudget(data: { category: string; monthlyLimit: string }): Promise<CategoryBudgetDto> {
+  const response = await api.post('/api/budget/category-budgets/', {
+    category: data.category,
+    monthly_limit: data.monthlyLimit,
+  });
+  return normalizeCategoryBudget(parseJsonData<CategoryBudgetApiDto>(response.data));
+}
+
+export async function updateCategoryBudget(
+  id: string,
+  data: { category?: string; monthlyLimit?: string }
+): Promise<CategoryBudgetDto> {
+  const payload: Record<string, unknown> = {};
+  if (data.category !== undefined) payload.category = data.category;
+  if (data.monthlyLimit !== undefined) payload.monthly_limit = data.monthlyLimit;
+  const response = await api.patch(`/api/budget/category-budgets/${id}/`, payload);
+  return normalizeCategoryBudget(parseJsonData<CategoryBudgetApiDto>(response.data));
+}
+
+export async function deleteCategoryBudget(id: string): Promise<void> {
+  await api.delete(`/api/budget/category-budgets/${id}/`);
+}
+
+export type GoalDto = {
+  id: string;
+  name: string;
+  icon: string;
+  targetAmount: number;
+  savedAmount: number;
+  /** YYYY-MM-DD or null when the goal has no deadline. */
+  deadline: string | null;
+};
+
+type GoalApiDto = {
+  id: string;
+  name: string;
+  icon: string;
+  target_amount: string;
+  saved_amount: string;
+  deadline: string | null;
+};
+
+export type GoalContributionDto = {
+  id: string;
+  amount: number;
+  note: string | null;
+  date: string;
+};
+
+type GoalContributionApiDto = {
+  id: string;
+  amount: string;
+  note: string | null;
+  date: string;
+};
+
+function normalizeGoal(item: GoalApiDto): GoalDto {
+  return {
+    id: String(item.id),
+    name: item.name,
+    icon: item.icon || 'flag',
+    targetAmount: Number(item.target_amount),
+    savedAmount: Number(item.saved_amount ?? 0),
+    deadline: item.deadline ?? null,
+  };
+}
+
+function normalizeContribution(item: GoalContributionApiDto): GoalContributionDto {
+  return { id: String(item.id), amount: Number(item.amount), note: item.note ?? null, date: item.date };
+}
+
+export async function getGoals(): Promise<GoalDto[]> {
+  const response = await api.get('/api/budget/goals/');
+  const data = parseJsonData<unknown>(response.data);
+  const raw = Array.isArray(data) ? data : [];
+  return raw.map((item) => normalizeGoal(item as GoalApiDto));
+}
+
+export async function createGoal(data: {
+  name: string;
+  icon: string;
+  targetAmount: string;
+  deadline: string | null;
+}): Promise<GoalDto> {
+  const response = await api.post('/api/budget/goals/', {
+    name: data.name,
+    icon: data.icon,
+    target_amount: data.targetAmount,
+    deadline: data.deadline,
+  });
+  return normalizeGoal(parseJsonData<GoalApiDto>(response.data));
+}
+
+export async function updateGoal(
+  id: string,
+  data: { name: string; icon: string; targetAmount: string; deadline: string | null }
+): Promise<GoalDto> {
+  const response = await api.patch(`/api/budget/goals/${id}/`, {
+    name: data.name,
+    icon: data.icon,
+    target_amount: data.targetAmount,
+    deadline: data.deadline,
+  });
+  return normalizeGoal(parseJsonData<GoalApiDto>(response.data));
+}
+
+export async function deleteGoal(id: string): Promise<void> {
+  await api.delete(`/api/budget/goals/${id}/`);
+}
+
+export async function getGoalContributions(goalId: string): Promise<GoalContributionDto[]> {
+  const response = await api.get(`/api/budget/goals/${goalId}/contributions/`);
+  const data = parseJsonData<unknown>(response.data);
+  const raw = Array.isArray(data) ? data : [];
+  return raw.map((item) => normalizeContribution(item as GoalContributionApiDto));
+}
+
+export async function addGoalContribution(
+  goalId: string,
+  data: { amount: string; note?: string; date: string }
+): Promise<GoalContributionDto> {
+  const response = await api.post(`/api/budget/goals/${goalId}/contributions/`, data);
+  return normalizeContribution(parseJsonData<GoalContributionApiDto>(response.data));
+}
+
+export async function deleteGoalContribution(goalId: string, contributionId: string): Promise<void> {
+  await api.delete(`/api/budget/goals/${goalId}/contributions/${contributionId}/`);
+}
+
+export type SubscriptionFrequency = 'weekly' | 'monthly' | 'yearly';
+
+export type SubscriptionDto = {
+  id: string;
+  name: string;
+  amount: number;
+  category: string | null;
+  frequency: SubscriptionFrequency;
+  /** YYYY-MM-DD */
+  nextDueDate: string;
+  isActive: boolean;
+};
+
+type SubscriptionApiDto = {
+  id: string;
+  name: string;
+  amount: string;
+  category: string | null;
+  frequency: SubscriptionFrequency;
+  next_due_date: string;
+  is_active: boolean;
+};
+
+function normalizeSubscription(item: SubscriptionApiDto): SubscriptionDto {
+  return {
+    id: String(item.id),
+    name: item.name,
+    amount: Number(item.amount),
+    category: item.category ?? null,
+    frequency: item.frequency,
+    nextDueDate: item.next_due_date,
+    isActive: item.is_active,
+  };
+}
+
+export type SubscriptionInput = {
+  name: string;
+  amount: string;
+  category: string | null;
+  frequency: SubscriptionFrequency;
+  nextDueDate: string;
+  isActive: boolean;
+};
+
+function toSubscriptionPayload(data: SubscriptionInput) {
+  return {
+    name: data.name,
+    amount: data.amount,
+    category: data.category,
+    frequency: data.frequency,
+    next_due_date: data.nextDueDate,
+    is_active: data.isActive,
+  };
+}
+
+export async function getSubscriptions(): Promise<SubscriptionDto[]> {
+  const response = await api.get('/api/budget/subscriptions/');
+  const data = parseJsonData<unknown>(response.data);
+  const raw = Array.isArray(data) ? data : [];
+  return raw.map((item) => normalizeSubscription(item as SubscriptionApiDto));
+}
+
+export async function createSubscription(data: SubscriptionInput): Promise<SubscriptionDto> {
+  const response = await api.post('/api/budget/subscriptions/', toSubscriptionPayload(data));
+  return normalizeSubscription(parseJsonData<SubscriptionApiDto>(response.data));
+}
+
+export async function updateSubscription(id: string, data: SubscriptionInput): Promise<SubscriptionDto> {
+  const response = await api.patch(`/api/budget/subscriptions/${id}/`, toSubscriptionPayload(data));
+  return normalizeSubscription(parseJsonData<SubscriptionApiDto>(response.data));
+}
+
+export async function deleteSubscription(id: string): Promise<void> {
+  await api.delete(`/api/budget/subscriptions/${id}/`);
+}
+
+/** Logs the payment as an expense and moves the due date to the next cycle. */
+export async function paySubscription(
+  id: string
+): Promise<{ subscription: SubscriptionDto; budgetAlert?: BudgetAlert }> {
+  const response = await api.post(`/api/budget/subscriptions/${id}/pay/`);
+  const data = parseJsonData<{ subscription: SubscriptionApiDto; budget_alert?: BudgetAlert }>(response.data);
+  return { subscription: normalizeSubscription(data.subscription), budgetAlert: data.budget_alert };
 }

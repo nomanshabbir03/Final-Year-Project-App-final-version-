@@ -18,6 +18,7 @@ const stub = {
   scheduleNotificationAsync: async () => '',
   cancelScheduledNotificationAsync: async () => {},
   cancelAllScheduledNotificationsAsync: async () => {},
+  getAllScheduledNotificationsAsync: async () => [],
   SchedulableTriggerInputTypes: { CALENDAR: 'calendar', DAILY: 'daily' },
 } as unknown as NotificationsModule;
 

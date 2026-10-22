@@ -1,609 +1,379 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  FlatList,
-  Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 
 import {
-  getTransactions,
-  deleteTransaction,
-  getSummary,
   getSettings,
-  TransactionDto,
-  TransactionType,
-  SummaryRow,
+  getSubscriptions,
+  getTransactions,
   BudgetSettingsDto,
+  SubscriptionDto,
+  TransactionDto,
 } from '../services/budgetService';
 import { toApiErrorMessage } from '../services/api';
-import { Colors } from '../constants/theme';
+import { Colors, Font, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
-import { BudgetSummaryChart } from '../components/BudgetSummaryChart';
+import { CategoryDonut } from '../components/CategoryDonut';
+import { TransactionRow } from '../components/TransactionRow';
+import { BudgetsTab } from '../components/BudgetsTab';
+import { GoalsTab } from '../components/GoalsTab';
+import { InsightsTab } from '../components/InsightsTab';
+import { ReportModal } from '../components/ReportModal';
+import { currentMonthRange, formatMoney } from '../utils/budgetFormat';
+import { dueInfo, monthlyEquivalent } from '../utils/subscriptions';
 
-type BudgetScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-type TypeFilter = 'all' | TransactionType;
+type TabKey = 'overview' | 'budgets' | 'goals' | 'insights';
 
-function todayString() {
-  return new Date().toISOString().split('T')[0];
-}
-
-function currentMonthRange() {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return { from: from.toISOString().split('T')[0], to: to.toISOString().split('T')[0] };
-}
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'budgets', label: 'Budgets' },
+  { key: 'goals', label: 'Goals' },
+  { key: 'insights', label: 'Insights' },
+];
 
 export function BudgetScreen() {
-  const navigation = useNavigation<BudgetScreenNavigationProp>();
+  const navigation = useNavigation<Nav>();
 
-  const [transactions, setTransactions] = useState<TransactionDto[]>([]);
-  const [summary, setSummary] = useState<SummaryRow[]>([]);
+  const [tab, setTab] = useState<TabKey>('overview');
+  const [monthTxns, setMonthTxns] = useState<TransactionDto[]>([]);
   const [settings, setSettings] = useState<BudgetSettingsDto | null>(null);
-  const [monthlyExpenseTotal, setMonthlyExpenseTotal] = useState(0);
-
+  const [subscriptions, setSubscriptions] = useState<SubscriptionDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [reportVisible, setReportVisible] = useState(false);
 
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [searchText, setSearchText] = useState('');
-  const [dateFrom, setDateFrom] = useState<string | null>(null);
-  const [dateTo, setDateTo] = useState<string | null>(null);
-  const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
-
-  const fetchTransactions = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
-      const data = await getTransactions({
-        type: typeFilter === 'all' ? undefined : typeFilter,
-        category: categoryFilter.trim() || undefined,
-        dateFrom: dateFrom ?? undefined,
-        dateTo: dateTo ?? undefined,
-        search: searchText.trim() || undefined,
-      });
-      setTransactions(data);
+      const { from, to } = currentMonthRange();
+      const [txns, cfg, subs] = await Promise.all([
+        getTransactions({ dateFrom: from, dateTo: to }),
+        getSettings().catch(() => null),
+        getSubscriptions().catch(() => [] as SubscriptionDto[]),
+      ]);
+      setMonthTxns(txns);
+      setSettings(cfg);
+      setSubscriptions(subs);
       setError(null);
     } catch (err) {
-      setError(toApiErrorMessage(err, 'Failed to load transactions'));
+      setError(toApiErrorMessage(err, 'Failed to load budget'));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [typeFilter, categoryFilter, dateFrom, dateTo, searchText]);
-
-  const fetchSummary = useCallback(async () => {
-    try {
-      setSummary(await getSummary());
-    } catch (err) {
-      // non-critical — chart just stays empty
-    }
-  }, []);
-
-  const fetchSettings = useCallback(async () => {
-    try {
-      setSettings(await getSettings());
-    } catch (err) {
-      // non-critical — progress indicator just stays hidden
-    }
-  }, []);
-
-  const fetchMonthlyExpenseTotal = useCallback(async () => {
-    try {
-      const { from, to } = currentMonthRange();
-      const monthTxns = await getTransactions({ type: 'expense', dateFrom: from, dateTo: to });
-      setMonthlyExpenseTotal(monthTxns.reduce((sum, t) => sum + Number(t.amount), 0));
-    } catch (err) {
-      // non-critical
-    }
-  }, []);
-
-  const fetchAll = useCallback(async () => {
-    await Promise.all([fetchTransactions(), fetchSummary(), fetchSettings(), fetchMonthlyExpenseTotal()]);
-  }, [fetchTransactions, fetchSummary, fetchSettings, fetchMonthlyExpenseTotal]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchTransactions();
-  }, [fetchTransactions]);
-
-  useEffect(() => {
-    fetchSummary();
-    fetchSettings();
-    fetchMonthlyExpenseTotal();
   }, []);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      fetchAll();
-    });
+    const unsubscribe = navigation.addListener('focus', load);
     return unsubscribe;
-  }, [navigation, fetchAll]);
+  }, [navigation, load]);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchAll();
-  };
-
-  const totalIncome = transactions.filter((t) => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
-  const totalExpense = transactions.filter((t) => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
-  const netBalance = totalIncome - totalExpense;
-
-  const monthlyLimit = settings?.monthlyLimit ? Number(settings.monthlyLimit) : null;
   const currency = settings?.currency ?? 'PKR';
-  const monthlyProgressPct = monthlyLimit ? Math.min((monthlyExpenseTotal / monthlyLimit) * 100, 100) : 0;
+  const monthlyLimit = settings?.monthlyLimit ? Number(settings.monthlyLimit) : null;
 
-  const handleAdd = () => navigation.navigate('AddTransaction');
-  const handleEdit = (transaction: TransactionDto) => navigation.navigate('AddTransaction', { transaction });
-  const handleSettings = () => navigation.navigate('BudgetSettings');
+  const { income, expense, donutRows } = useMemo(() => {
+    let inc = 0;
+    let exp = 0;
+    const byCategory = new Map<string, number>();
+    monthTxns.forEach((t) => {
+      const amount = Number(t.amount);
+      if (t.type === 'income') {
+        inc += amount;
+      } else {
+        exp += amount;
+        const name = t.category?.trim() || 'Other';
+        byCategory.set(name, (byCategory.get(name) ?? 0) + amount);
+      }
+    });
+    return {
+      income: inc,
+      expense: exp,
+      donutRows: Array.from(byCategory, ([label, value]) => ({ label, value })),
+    };
+  }, [monthTxns]);
 
-  const handleDelete = (transaction: TransactionDto) => {
-    Alert.alert(
-      'Delete Transaction',
-      `Delete this ${transaction.type} of ${currency} ${transaction.amount}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteTransaction(transaction.id);
-              await fetchAll();
-            } catch (err) {
-              Alert.alert('Error', toApiErrorMessage(err, 'Failed to delete transaction'));
-            }
-          },
-        },
-      ]
-    );
-  };
+  const activeSubs = subscriptions.filter((s) => s.isActive).sort((a, b) => (a.nextDueDate < b.nextDueDate ? -1 : 1));
+  const subsMonthly = activeSubs.reduce((sum, s) => sum + monthlyEquivalent(s.amount, s.frequency), 0);
+  const nextSub = activeSubs[0];
+  const net = income - expense;
+  const limitPct = monthlyLimit ? Math.min((expense / monthlyLimit) * 100, 100) : 0;
+  const overLimit = monthlyLimit !== null && expense > monthlyLimit;
+  const monthName = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const handlePickerChange = (event: any, selectedDate?: Date) => {
-    const target = pickerTarget;
-    setPickerTarget(null);
-    if (event.type === 'set' && selectedDate && target) {
-      const value = selectedDate.toISOString().split('T')[0];
-      if (target === 'from') setDateFrom(value);
-      else setDateTo(value);
-    }
-  };
+  const openTransaction = (t: TransactionDto) => navigation.navigate('AddTransaction', { transaction: t });
 
-  const renderTransaction = ({ item }: { item: TransactionDto }) => {
-    const isIncome = item.type === 'income';
-    return (
-      <Pressable onPress={() => handleEdit(item)}>
-        <View style={styles.txnCard}>
-          <View style={styles.txnRow}>
-            <View style={styles.txnInfo}>
-              <Text style={[styles.txnAmount, { color: isIncome ? Colors.success : Colors.error }]}>
-                {isIncome ? '+' : '-'}{currency} {item.amount}
-              </Text>
-              <Text style={styles.txnMeta}>{item.category || 'Uncategorized'} • {item.date}</Text>
-              {item.description ? <Text style={styles.txnDescription} numberOfLines={2}>{item.description}</Text> : null}
+  const renderOverview = () => (
+    <>
+      {/* Balance hero */}
+      <View style={styles.hero}>
+        <Text style={styles.heroLabel}>{monthName} · Net balance</Text>
+        <Text style={styles.heroValue}>
+          {net < 0 ? '-' : ''}
+          {currency} {formatMoney(net)}
+        </Text>
+        <View style={styles.heroRow}>
+          <View style={styles.heroStat}>
+            <View style={styles.heroIcon}>
+              <Ionicons name="arrow-down" size={16} color={Colors.primary} />
             </View>
-            <Pressable style={styles.deleteButton} onPress={() => handleDelete(item)}>
-              <Text style={styles.deleteButtonText}>🗑️</Text>
-            </Pressable>
+            <View>
+              <Text style={styles.heroStatLabel}>Income</Text>
+              <Text style={styles.heroStatValue}>{formatMoney(income)}</Text>
+            </View>
+          </View>
+          <View style={styles.heroStat}>
+            <View style={styles.heroIcon}>
+              <Ionicons name="arrow-up" size={16} color={Colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.heroStatLabel}>Expenses</Text>
+              <Text style={styles.heroStatValue}>{formatMoney(expense)}</Text>
+            </View>
           </View>
         </View>
-      </Pressable>
-    );
-  };
+      </View>
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading budget...</Text>
+      {/* Monthly limit */}
+      {monthlyLimit ? (
+        <View style={styles.card}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.cardTitle}>Monthly limit</Text>
+            <Text style={[styles.limitPct, overLimit && { color: Colors.error }]}>
+              {Math.round((expense / monthlyLimit) * 100)}%
+            </Text>
+          </View>
+          <View style={styles.track}>
+            <View
+              style={[
+                styles.fill,
+                { width: `${limitPct}%`, backgroundColor: overLimit ? Colors.error : Colors.primary },
+              ]}
+            />
+          </View>
+          <Text style={styles.limitText}>
+            {currency} {formatMoney(expense)} of {formatMoney(monthlyLimit)}
+            {overLimit ? ` · over by ${formatMoney(expense - monthlyLimit)}` : ''}
+          </Text>
         </View>
-      </SafeAreaView>
-    );
-  }
+      ) : null}
+
+      {/* Subscriptions entry */}
+      <Pressable style={({ pressed }) => [styles.subsCard, pressed && { opacity: 0.85 }]} onPress={() => navigation.navigate('Subscriptions')}>
+        <View style={styles.subsIcon}>
+          <Ionicons name="repeat" size={22} color={Colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.subsTitle}>Subscriptions & bills</Text>
+          <Text style={styles.subsMeta} numberOfLines={1}>
+            {activeSubs.length === 0
+              ? 'Add recurring payments and get reminded'
+              : `${activeSubs.length} active · ${currency} ${formatMoney(subsMonthly)}/month`}
+          </Text>
+          {nextSub ? (
+            <Text style={[styles.subsNext, dueInfo(nextSub.nextDueDate).status === 'overdue' && { color: Colors.error }]} numberOfLines={1}>
+              Next: {nextSub.name} · {dueInfo(nextSub.nextDueDate).text.toLowerCase()}
+            </Text>
+          ) : null}
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={Colors.textHint} />
+      </Pressable>
+
+      {/* Spending donut */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Spending by category</Text>
+        <CategoryDonut rows={donutRows} currency={currency} />
+      </View>
+
+      {/* Recent */}
+      <View style={styles.rowBetween}>
+        <Text style={styles.sectionTitle}>Recent transactions</Text>
+        <Pressable onPress={() => navigation.navigate('Transactions')} hitSlop={8}>
+          <Text style={styles.link}>See all</Text>
+        </Pressable>
+      </View>
+      {monthTxns.length === 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.emptyText}>{error ?? 'No transactions this month yet. Tap + to add one.'}</Text>
+        </View>
+      ) : (
+        <View style={{ gap: 10 }}>
+          {monthTxns.slice(0, 5).map((t) => (
+            <TransactionRow key={t.id} item={t} currency={currency} onPress={() => openTransaction(t)} />
+          ))}
+        </View>
+      )}
+    </>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View>
+        {navigation.canGoBack() ? (
+          <Pressable style={styles.iconBtn} onPress={() => navigation.goBack()} hitSlop={8}>
+            <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
+          </Pressable>
+        ) : null}
+        <View style={{ flex: 1 }}>
           <Text style={styles.title}>Budget</Text>
-          <Text style={styles.subtitle}>Track your income and expenses.</Text>
+          <Text style={styles.subtitle}>Your money, under control.</Text>
         </View>
-        <Pressable style={styles.settingsButton} onPress={handleSettings}>
-          <Text style={styles.settingsButtonText}>⚙️</Text>
+        <Pressable style={styles.iconBtn} onPress={() => setReportVisible(true)} hitSlop={8}>
+          <Ionicons name="document-text-outline" size={24} color={Colors.textPrimary} />
+        </Pressable>
+        <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('BudgetSettings')} hitSlop={8}>
+          <Ionicons name="settings-outline" size={24} color={Colors.textPrimary} />
         </Pressable>
       </View>
 
-      <FlatList
-        data={transactions}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>💸</Text>
-            <Text style={styles.emptyText}>{error ? error : 'No transactions match your filters.'}</Text>
-          </View>
-        }
-        ListHeaderComponent={
-          <View>
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryRow}>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Income</Text>
-                  <Text style={[styles.summaryValue, { color: Colors.success }]}>{currency} {totalIncome.toFixed(2)}</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Expenses</Text>
-                  <Text style={[styles.summaryValue, { color: Colors.error }]}>{currency} {totalExpense.toFixed(2)}</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Net</Text>
-                  <Text style={[styles.summaryValue, { color: netBalance >= 0 ? Colors.success : Colors.error }]}>
-                    {currency} {netBalance.toFixed(2)}
-                  </Text>
-                </View>
-              </View>
+      <View style={styles.tabs}>
+        {TABS.map((t) => (
+          <Pressable key={t.key} style={[styles.tab, tab === t.key && styles.tabActive]} onPress={() => setTab(t.key)}>
+            <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
+          </Pressable>
+        ))}
+      </View>
 
-              {monthlyLimit ? (
-                <View style={styles.limitSection}>
-                  <Text style={styles.limitText}>
-                    {currency} {monthlyExpenseTotal.toFixed(0)} / {monthlyLimit.toFixed(0)} this month
-                  </Text>
-                  <View style={styles.progressBar}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        {
-                          width: `${monthlyProgressPct}%`,
-                          backgroundColor: monthlyProgressPct >= 100 ? Colors.error : Colors.primary,
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-              ) : null}
-            </View>
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                setReloadKey((k) => k + 1);
+                load();
+              }}
+              tintColor={Colors.primary}
+            />
+          }
+        >
+          {tab === 'overview' ? (
+            renderOverview()
+          ) : tab === 'budgets' ? (
+            <BudgetsTab currency={currency} reloadKey={reloadKey} />
+          ) : tab === 'goals' ? (
+            <GoalsTab currency={currency} reloadKey={reloadKey} />
+          ) : (
+            <InsightsTab currency={currency} monthlyLimit={monthlyLimit} reloadKey={reloadKey} />
+          )}
+        </ScrollView>
+      )}
 
-            <BudgetSummaryChart summary={summary} />
-
-            <View style={styles.filtersCard}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search description or category..."
-                placeholderTextColor="#9CA3AF"
-                value={searchText}
-                onChangeText={setSearchText}
-              />
-
-              <View style={styles.typeFilterRow}>
-                {(['all', 'income', 'expense'] as const).map((option) => (
-                  <Pressable
-                    key={option}
-                    style={[styles.typeFilterButton, typeFilter === option && styles.typeFilterButtonActive]}
-                    onPress={() => setTypeFilter(option)}
-                  >
-                    <Text style={[styles.typeFilterText, typeFilter === option && styles.typeFilterTextActive]}>
-                      {option === 'all' ? 'All' : option === 'income' ? 'Income' : 'Expense'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <TextInput
-                style={styles.categoryInput}
-                placeholder="Filter by category..."
-                placeholderTextColor="#9CA3AF"
-                value={categoryFilter}
-                onChangeText={setCategoryFilter}
-              />
-
-              <View style={styles.dateFilterRow}>
-                <Pressable style={styles.dateFilterButton} onPress={() => setPickerTarget('from')}>
-                  <Text style={styles.dateFilterText}>{dateFrom ?? 'From date'}</Text>
-                </Pressable>
-                <Pressable style={styles.dateFilterButton} onPress={() => setPickerTarget('to')}>
-                  <Text style={styles.dateFilterText}>{dateTo ?? 'To date'}</Text>
-                </Pressable>
-                {(dateFrom || dateTo) && (
-                  <Pressable
-                    style={styles.clearDatesButton}
-                    onPress={() => {
-                      setDateFrom(null);
-                      setDateTo(null);
-                    }}
-                  >
-                    <Text style={styles.clearDatesText}>✕</Text>
-                  </Pressable>
-                )}
-              </View>
-            </View>
-
-            {pickerTarget && (
-              <DateTimePicker
-                value={new Date((pickerTarget === 'from' ? dateFrom : dateTo) ?? todayString())}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                onChange={handlePickerChange}
-              />
-            )}
-
-            <Text style={styles.sectionTitle}>Transactions</Text>
-          </View>
-        }
-        renderItem={renderTransaction}
-      />
-
-      <Pressable style={styles.fab} onPress={handleAdd}>
-        <Text style={styles.fabText}>+</Text>
-      </Pressable>
+      {tab === 'overview' && (
+        <Pressable style={styles.fab} onPress={() => navigation.navigate('AddTransaction')}>
+          <Ionicons name="add" size={32} color={Colors.white} />
+        </Pressable>
+      )}
+      <ReportModal visible={reportVisible} onClose={() => setReportVisible(false)} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgLight,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: Colors.textSecondary,
-  },
-  header: {
+  container: { flex: 1, backgroundColor: Colors.bgLight },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12 },
+  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  title: { fontFamily: Font.extrabold, fontSize: 28, color: Colors.textPrimary, letterSpacing: -0.4, paddingLeft: 4 },
+  subtitle: { fontFamily: Font.medium, fontSize: 15, color: Colors.textSecondary, paddingLeft: 4 },
+
+  tabs: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  settingsButton: {
-    padding: 8,
-  },
-  settingsButtonText: {
-    fontSize: 22,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 100,
-  },
-  summaryCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    padding: 14,
-    marginTop: 8,
-    marginBottom: 16,
-    gap: 12,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  summaryItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  limitSection: {
-    gap: 6,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-    paddingTop: 10,
-  },
-  limitText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: Colors.borderLight,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  filtersCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    padding: 12,
-    marginBottom: 16,
-    gap: 10,
-  },
-  searchInput: {
-    height: 42,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
-    paddingHorizontal: 12,
-    fontSize: 14,
-    color: Colors.textPrimary,
-  },
-  typeFilterRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  typeFilterButton: {
-    flex: 1,
-    height: 36,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  typeFilterButtonActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  typeFilterText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  typeFilterTextActive: {
-    color: Colors.white,
-  },
-  categoryInput: {
-    height: 38,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
-    paddingHorizontal: 12,
-    fontSize: 13,
-    color: Colors.textPrimary,
-  },
-  dateFilterRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  dateFilterButton: {
-    flex: 1,
-    height: 36,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-  },
-  dateFilterText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  clearDatesButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.borderLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearDatesText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 8,
-  },
-  txnCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    padding: 12,
-  },
-  txnRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  txnInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  txnAmount: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  txnMeta: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  txnDescription: {
-    fontSize: 12,
-    color: Colors.textHint,
-  },
-  deleteButton: {
+    marginHorizontal: 16,
     padding: 4,
-  },
-  deleteButtonText: {
-    fontSize: 16,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyIcon: {
-    fontSize: 48,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.tintSlate,
     marginBottom: 12,
   },
-  emptyText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    paddingHorizontal: 24,
+  tab: { flex: 1, height: 42, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  tabActive: { backgroundColor: Colors.primary, ...Shadows.button },
+  tabText: { fontFamily: Font.semibold, fontSize: 14, color: Colors.textSecondary },
+  tabTextActive: { color: Colors.white, fontFamily: Font.bold },
+
+  content: { paddingHorizontal: 16, paddingBottom: 120, gap: 14 },
+
+  hero: { backgroundColor: Colors.primary, borderRadius: Radius.xl, padding: 16, gap: 4, ...Shadows.button },
+  heroLabel: { fontFamily: Font.semibold, fontSize: 14, color: 'rgba(255,255,255,0.9)' },
+  heroValue: { fontFamily: Font.extrabold, fontSize: 30, color: Colors.white, letterSpacing: -0.6 },
+  heroRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  heroStat: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: Radius.md,
+    padding: 10,
   },
+  heroIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center' },
+  heroStatLabel: { fontFamily: Font.medium, fontSize: 12, color: 'rgba(255,255,255,0.9)' },
+  heroStatValue: { fontFamily: Font.extrabold, fontSize: 16, color: Colors.white },
+
+  card: {
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    padding: 14,
+    gap: 12,
+    ...Shadows.card,
+  },
+  cardTitle: { fontFamily: Font.extrabold, fontSize: 16, color: Colors.textPrimary },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  limitPct: { fontFamily: Font.extrabold, fontSize: 17, color: Colors.primary },
+  track: { height: 10, borderRadius: 5, backgroundColor: Colors.primarySurface, overflow: 'hidden' },
+  fill: { height: '100%', borderRadius: 5 },
+  limitText: { fontFamily: Font.medium, fontSize: 14, color: Colors.textSecondary },
+
+  sectionTitle: { fontFamily: Font.extrabold, fontSize: 18, color: Colors.textPrimary },
+  link: { fontFamily: Font.bold, fontSize: 15, color: Colors.primary },
+  emptyText: { fontFamily: Font.medium, fontSize: 15, lineHeight: 22, color: Colors.textSecondary, textAlign: 'center' },
+
+  subsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    padding: 12,
+    ...Shadows.card,
+  },
+  subsIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.primarySurface, alignItems: 'center', justifyContent: 'center' },
+  subsTitle: { fontFamily: Font.bold, fontSize: 16, color: Colors.textPrimary },
+  subsMeta: { fontFamily: Font.medium, fontSize: 13, color: Colors.textSecondary },
+  subsNext: { fontFamily: Font.semibold, fontSize: 13, color: Colors.primary, marginTop: 1 },
+
   fab: {
     position: 'absolute',
-    bottom: 24,
     right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    bottom: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: Colors.primary,
-    justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  fabText: {
-    color: Colors.white,
-    fontSize: 28,
-    fontWeight: '700',
-    lineHeight: 30,
+    justifyContent: 'center',
+    ...Shadows.button,
   },
 });

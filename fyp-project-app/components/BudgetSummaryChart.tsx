@@ -2,7 +2,7 @@ import React from 'react';
 import { Dimensions, StyleSheet, Text, View } from 'react-native';
 import { BarChart } from 'react-native-chart-kit';
 
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { SummaryRow } from '../services/budgetService';
 
 type Props = {
@@ -42,8 +42,8 @@ export function BudgetSummaryChart({ summary }: Props) {
           backgroundGradientFrom: Colors.surfaceLight,
           backgroundGradientTo: Colors.surfaceLight,
           decimalPlaces: 0,
-          color: (opacity = 1) => `rgba(29, 158, 117, ${opacity})`,
-          labelColor: (opacity = 1) => `rgba(74, 124, 89, ${opacity})`,
+          color: (opacity = 1) => `rgba(255, 107, 44, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
           barPercentage: 0.6,
         }}
         style={styles.chart}
@@ -55,12 +55,13 @@ export function BudgetSummaryChart({ summary }: Props) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
     marginHorizontal: 16,
     marginBottom: 16,
+    ...Shadows.card,
   },
   title: {
     fontSize: 16,
@@ -73,13 +74,14 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 20,
     marginHorizontal: 16,
     marginBottom: 16,
     alignItems: 'center',
+    ...Shadows.card,
   },
   emptyText: {
     fontSize: 14,
