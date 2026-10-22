@@ -30,6 +30,8 @@ import { MedicationHistoryScreen } from '../screens/MedicationHistoryScreen';
 import { AllMedicationsScreen } from '../screens/AllMedicationsScreen';
 import { EditProfileScreen } from '../screens/EditProfileScreen';
 import { BudgetScreen } from '../screens/BudgetScreen';
+import { TransactionsScreen } from '../screens/TransactionsScreen';
+import { SubscriptionsScreen } from '../screens/SubscriptionsScreen';
 import { AddTransactionScreen } from '../screens/AddTransactionScreen';
 import { BudgetSettingsScreen } from '../screens/BudgetSettingsScreen';
 import { useAuth } from '../context/AuthContext';
@@ -60,7 +62,7 @@ export function AppNavigator() {
   if (isLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color="#1d4ed8" />
+        <ActivityIndicator size="large" color="#FF6B2C" />
       </View>
     );
   }
@@ -116,6 +118,8 @@ export function AppNavigator() {
         <Stack.Screen name="Reports" component={ReportsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="More" component={MoreScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Budget" component={BudgetScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Subscriptions" component={SubscriptionsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Transactions" component={TransactionsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="AddTransaction" component={AddTransactionScreen} options={{ headerShown: false }} />
         <Stack.Screen name="BudgetSettings" component={BudgetSettingsScreen} options={{ headerShown: false }} />
       </Stack.Navigator>

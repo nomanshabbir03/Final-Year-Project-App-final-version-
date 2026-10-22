@@ -1,17 +1,19 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, RefreshControl } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, MainTabParamList } from '../navigation/types';
 import { CompositeNavigationProp } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { Colors } from '../constants/theme';
+import { Colors, Font, Radius, Shadows } from '../constants/theme';
 import { fetchWeatherByCity } from '../services/weatherService';
 import { api, parseJsonData } from '../services/api';
+import { DashboardBudgetCard } from '../components/DashboardBudgetCard';
 
 interface PrayerTimes {
   Fajr: string;
@@ -53,10 +55,12 @@ export function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { tasks, habits, weather, setWeather, toggleTask, completeHabit } = useAppContext();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const weatherFetchRef = useRef<{ city: string; at: number } | null>(null);
   
   // State for real-time data
   const [refreshing, setRefreshing] = useState(false);
+  const [budgetReloadKey, setBudgetReloadKey] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
   const [hijriDate, setHijriDate] = useState<DateInfo | null>(null);
@@ -338,6 +342,7 @@ export function HomeScreen() {
   
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setBudgetReloadKey((k) => k + 1);
     await Promise.all([
       fetchPrayerData(),
       fetchMedications()
@@ -376,72 +381,176 @@ export function HomeScreen() {
   const nextMed = getNextMedication();
   const tasksDueThisWeek = getTasksDueThisWeek();
 
+  const initials = (user?.fullName || firstName)
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || '?';
+
+  const nextPrayer = prayerTimes
+    ? Object.entries(prayerTimes).find(([name, time]) => !getPrayerStatus(name, time).isPast)
+    : undefined;
+
+  const statTiles: {
+    key: string;
+    label: string;
+    value: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    tint: string;
+    solid: string;
+    onPress: () => void;
+  }[] = [
+    {
+      key: 'tasks',
+      label: 'Tasks Due',
+      value: `${todaysTasks.length} Today`,
+      icon: 'checkbox',
+      tint: Colors.tintOrange,
+      solid: Colors.primary,
+      onPress: () => navigation.navigate('Tasks'),
+    },
+    {
+      key: 'habits',
+      label: 'Habits',
+      value: `${completedHabitsToday}/${habits.length} Done`,
+      icon: 'flame',
+      tint: Colors.tintAmber,
+      solid: Colors.accentAmber,
+      onPress: () => navigation.navigate('Habits'),
+    },
+    {
+      key: 'prayer',
+      label: 'Next Prayer',
+      value: nextPrayer ? `${nextPrayer[0]} ${nextPrayer[1]}` : 'Done today',
+      icon: 'moon',
+      tint: Colors.tintSky,
+      solid: Colors.accentTeal,
+      onPress: () => navigation.navigate('PrayerTime'),
+    },
+    {
+      key: 'medication',
+      label: 'Medication',
+      value: nextMed ? nextMed.schedule_times[0] : 'All clear',
+      icon: 'medkit',
+      tint: Colors.tintIndigo,
+      solid: Colors.accentBlue,
+      onPress: () => navigation.navigate('Medication'),
+    },
+  ];
+
   return (
-    <ScrollView 
-      style={styles.screen} 
-      contentContainerStyle={styles.contentContainer}
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top + 16 }]}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
       }
     >
-      {/* Hero Greeting Card */}
-      <View style={styles.heroCard}>
-        <Text style={styles.dateMeta}>
-          {formatDate(currentTime)} {hijriDate && `· ${hijriDate.hijri.day} ${hijriDate.hijri.month.en}`}
-        </Text>
-        <Text style={styles.greetingLabel}>{getGreeting()},</Text>
-        <Text style={styles.greetingLine}>{firstName} — {getMoodLine()}</Text>
-        <View style={styles.separator} />
-        <View style={styles.weatherStrip}>
-          <Text style={styles.weatherPill}>
-            {weather && `${formatTemp(weather.temperatureC, '°')} ${weather.city}`}
+      {/* Greeting Row */}
+      <View style={styles.greetingRow}>
+        <View style={styles.greetingText}>
+          <Text style={styles.dateMeta}>
+            {formatDate(currentTime)} {hijriDate && `· ${hijriDate.hijri.day} ${hijriDate.hijri.month.en}`}
           </Text>
-          <Text style={styles.weatherMood}>{getWeatherMood()}</Text>
+          <Text style={styles.greetingLine}>{getGreeting()}, {firstName} 👋</Text>
+          <Text style={styles.greetingLabel}>{getMoodLine()}</Text>
         </View>
+        <Pressable style={styles.avatar} onPress={() => navigation.navigate('Profile')}>
+          {user?.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.avatarText}>{initials}</Text>
+          )}
+        </Pressable>
       </View>
 
-      {/* Right Now Card */}
-      {nextEvent && (
-        <Pressable 
-          style={styles.rightNowCard}
-          onPress={() => {
-            if (nextEvent.type === 'prayer') navigation.navigate('PrayerTime');
-            if (nextEvent.type === 'medication') navigation.navigate('Medication');
-            if (nextEvent.type === 'task') navigation.navigate('Tasks');
-          }}
-        >
-          <View style={styles.rightNowHeader}>
-            <View style={styles.pulseDot} />
-            <Text style={styles.rightNowLabel}>RIGHT NOW · NEXT UP</Text>
+      {/* Hero Card: Next Up + Weather */}
+      <Pressable
+        style={styles.heroCard}
+        disabled={!nextEvent}
+        onPress={() => {
+          if (!nextEvent) return;
+          if (nextEvent.type === 'prayer') navigation.navigate('PrayerTime');
+          if (nextEvent.type === 'medication') navigation.navigate('Medication');
+          if (nextEvent.type === 'task') navigation.navigate('Tasks');
+        }}
+      >
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroMain}>
+            <View style={styles.rightNowBadge}>
+              <View style={styles.pulseDot} />
+              <Text style={styles.rightNowLabel}>RIGHT NOW · NEXT UP</Text>
+            </View>
+            {nextEvent ? (
+              <>
+                <Text style={styles.rightNowHeadline}>
+                  {nextEvent.displayName} in {getTimeUntil(nextEvent.time)}
+                </Text>
+                <Text style={styles.rightNowSubline}>
+                  at {formatTime(nextEvent.time)}
+                  {nextEvent.type === 'medication' && nextMed && ` · then ${nextMed.name} at ${nextMed.schedule_times[1] || 'later'}`}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.rightNowHeadline}>Nothing scheduled</Text>
+            )}
           </View>
-          <Text style={styles.rightNowHeadline}>
-            {nextEvent.displayName} in {getTimeUntil(nextEvent.time)}
-          </Text>
-          <Text style={styles.rightNowSubline}>
-            at {formatTime(nextEvent.time)} 
-            {nextEvent.type === 'medication' && nextMed && ` · then ${nextMed.name} at ${nextMed.schedule_times[1] || 'later'}`}
-          </Text>
+          <Pressable style={styles.weatherChip} onPress={() => navigation.navigate('Weather')}>
+            <View style={styles.weatherChipRow}>
+              <Ionicons name="partly-sunny" size={18} color={Colors.accentTeal} />
+              <Text style={styles.weatherPill}>
+                {weather ? formatTemp(weather.temperatureC, '°') : '--'}
+              </Text>
+            </View>
+            <Text style={styles.weatherCity} numberOfLines={1}>{weather?.city ?? ''}</Text>
+          </Pressable>
+        </View>
+        {nextEvent && (
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: '30%' }]} />
           </View>
-        </Pressable>
-      )}
+        )}
+        {weather && <Text style={styles.weatherMood}>{getWeatherMood()}</Text>}
+      </Pressable>
+
+      {/* 2x2 Tinted Summary Grid */}
+      <View style={styles.statGrid}>
+        {statTiles.map((tile) => (
+          <Pressable
+            key={tile.key}
+            style={({ pressed }) => [styles.statTile, { backgroundColor: tile.tint }, pressed && styles.pressed]}
+            onPress={tile.onPress}
+          >
+            <View style={[styles.statIcon, { backgroundColor: tile.solid }]}>
+              <Ionicons name={tile.icon} size={22} color={Colors.white} />
+            </View>
+            <View style={styles.statText}>
+              <Text style={styles.statLabel}>{tile.label}</Text>
+              <Text style={styles.statValue} numberOfLines={1}>{tile.value}</Text>
+            </View>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* Budget summary */}
+      <DashboardBudgetCard reloadKey={budgetReloadKey} />
 
       {/* Today's Rhythm Card */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Today's rhythm</Text>
-        <Pressable onPress={() => navigation.navigate('PrayerTime')}>
-          <Text style={styles.sectionLink}>Prayer times →</Text>
-        </Pressable>
-      </View>
       <View style={styles.rhythmCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today's rhythm</Text>
+          <Pressable onPress={() => navigation.navigate('PrayerTime')}>
+            <Text style={styles.sectionLink}>Prayer times →</Text>
+          </Pressable>
+        </View>
         <View style={styles.prayerTimeline}>
           {prayerTimes && Object.entries(prayerTimes).map(([name, time], index) => {
             const { isPast, isNext } = getPrayerStatus(name, time);
             return (
               <View key={name} style={styles.prayerPoint}>
                 <View style={[
-                  styles.prayerDot, 
+                  styles.prayerDot,
                   isPast && styles.prayerDotPast,
                   isNext && styles.prayerDotNext
                 ]} />
@@ -467,7 +576,9 @@ export function HomeScreen() {
           })}
         </View>
         <View style={styles.contextualNoteRow}>
-          <Ionicons name="water" size={16} color={Colors.textSecondary} />
+          <View style={styles.noteIcon}>
+            <Ionicons name="water" size={16} color={Colors.accentTeal} />
+          </View>
           <Text style={styles.contextualNote}>{getContextualNote()}</Text>
         </View>
       </View>
@@ -478,9 +589,11 @@ export function HomeScreen() {
           <Text style={styles.habitsTitle}>
             {habits.length} small thing{habits.length !== 1 ? 's' : ''}
           </Text>
-          <Text style={styles.habitsCount}>
-            {completedHabitsToday} of {habits.length}
-          </Text>
+          <View style={styles.countBadge}>
+            <Text style={styles.habitsCount}>
+              {completedHabitsToday} of {habits.length}
+            </Text>
+          </View>
         </View>
         <Text style={styles.habitsSubtitle}>Tap to mark done. No pressure.</Text>
         <View style={styles.habitTiles}>
@@ -499,10 +612,10 @@ export function HomeScreen() {
                   styles.habitIcon,
                   isCompleted && styles.habitIconCompleted
                 ]}>
-                  <Ionicons 
-                    name="checkmark" 
-                    size={16} 
-                    color={isCompleted ? Colors.textPrimary : Colors.textSecondary} 
+                  <Ionicons
+                    name="checkmark"
+                    size={16}
+                    color={isCompleted ? Colors.primary : Colors.white}
                   />
                 </View>
                 <Text style={[
@@ -563,7 +676,7 @@ export function HomeScreen() {
             </Text>
             <View style={styles.medicationRow}>
               <View style={styles.medicationIcon}>
-                <Ionicons name="medkit" size={20} color={Colors.white} />
+                <Ionicons name="medkit" size={22} color={Colors.white} />
               </View>
               <View style={styles.medicationInfo}>
                 <Text style={styles.medicationName}>{nextMed!.name}</Text>
@@ -637,129 +750,212 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
-    paddingTop: 100,
     gap: 16,
-    paddingBottom: 30,
+    paddingBottom: 40,
   },
-  
-  // Hero Card
-  heroCard: {
-    backgroundColor: Colors.textPrimary,
-    borderRadius: 18,
-    padding: 20,
+  pressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+
+  // Greeting Row
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 12,
   },
-  dateMeta: {
-    color: Colors.white,
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.8,
-    opacity: 0.8,
+  greetingText: {
+    flex: 1,
   },
-  greetingLabel: {
-    color: Colors.white,
-    fontSize: 14,
-    fontWeight: '500',
+  dateMeta: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontFamily: Font.semibold,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.6,
   },
   greetingLine: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.white,
-    lineHeight: 34,
+    fontSize: 22,
+    fontFamily: Font.extrabold,
+    color: Colors.textPrimary,
+    letterSpacing: -0.5,
+    marginTop: 2,
   },
-  separator: {
-    height: 1,
-    backgroundColor: Colors.textSecondary,
-    opacity: 0.3,
-    marginVertical: 4,
+  greetingLabel: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontFamily: Font.medium,
+    marginTop: 2,
   },
-  weatherStrip: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    ...Shadows.button,
   },
-  weatherPill: {
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 25,
+  },
+  avatarText: {
     color: Colors.white,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontFamily: Font.extrabold,
   },
-  weatherMood: {
-    color: Colors.white,
-    fontSize: 13,
-    fontStyle: 'italic',
-    opacity: 0.8,
-  },
-  
-  // Right Now Card
-  rightNowCard: {
-    backgroundColor: Colors.primarySurface,
-    borderRadius: 16,
+
+  // Hero Card
+  heroCard: {
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
     padding: 16,
-    gap: 8,
+    gap: 12,
+    ...Shadows.card,
   },
-  rightNowHeader: {
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  heroMain: {
+    flex: 1,
+    gap: 6,
+  },
+  rightNowBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: Colors.tintOrange,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   pulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.accentAmber,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
   },
   rightNowLabel: {
-    color: Colors.textHint,
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.8,
+    color: Colors.primary,
+    fontSize: 12,
+    fontFamily: Font.extrabold,
+    letterSpacing: 0.6,
   },
   rightNowHeadline: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 24,
+    fontFamily: Font.extrabold,
     color: Colors.textPrimary,
-    lineHeight: 24,
+    lineHeight: 30,
+    letterSpacing: -0.4,
   },
   rightNowSubline: {
-    fontSize: 14,
+    fontSize: 15,
     color: Colors.textSecondary,
-    lineHeight: 18,
+    fontFamily: Font.medium,
   },
-  
+  weatherChip: {
+    backgroundColor: Colors.tintSky,
+    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'flex-end',
+    maxWidth: 110,
+  },
+  weatherChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  weatherPill: {
+    color: Colors.accentTeal,
+    fontSize: 18,
+    fontFamily: Font.extrabold,
+  },
+  weatherCity: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontFamily: Font.semibold,
+    marginTop: 2,
+  },
+  weatherMood: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontFamily: Font.medium,
+  },
+
+  // Stat Grid
+  statGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 10,
+  },
+  statTile: {
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: Radius.lg,
+    padding: 14,
+  },
+  statIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statText: {
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 13,
+    fontFamily: Font.semibold,
+    color: Colors.textSecondary,
+  },
+  statValue: {
+    fontSize: 16,
+    fontFamily: Font.extrabold,
+    color: Colors.textPrimary,
+    marginTop: 1,
+  },
+
   // Section Headers
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontFamily: Font.extrabold,
     color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   sectionLink: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontFamily: Font.bold,
     color: Colors.primary,
   },
-  
+
   // Rhythm Card
   rhythmCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
-    gap: 12,
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    gap: 16,
+    ...Shadows.card,
   },
   prayerTimeline: {
     flexDirection: 'row',
@@ -773,92 +969,97 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   prayerDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.borderLight,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 2,
-    borderColor: Colors.primary,
+    borderColor: Colors.borderLight,
   },
   prayerDotPast: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
   prayerDotNext: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.accentAmber,
-    borderColor: Colors.accentAmber,
-    shadowColor: Colors.accentAmber,
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 3,
+    borderColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
   prayerName: {
-    fontSize: 9,
-    fontWeight: '700',
+    fontSize: 11,
+    fontFamily: Font.bold,
     textTransform: 'uppercase' as const,
     color: Colors.textHint,
     letterSpacing: 0.5,
   },
   prayerNamePast: {
-    color: Colors.primary,
+    color: Colors.textSecondary,
   },
   prayerNameNext: {
-    color: Colors.accentAmber,
-    fontWeight: '800',
+    color: Colors.primary,
+    fontFamily: Font.extrabold,
   },
   prayerTime: {
-    fontSize: 11,
-    fontWeight: '500',
+    fontSize: 13,
+    fontFamily: Font.semibold,
     color: Colors.textHint,
   },
   prayerTimePast: {
-    color: Colors.primary,
+    color: Colors.textSecondary,
   },
   prayerTimeNext: {
-    color: Colors.accentAmber,
-    fontWeight: '700',
+    color: Colors.primary,
+    fontFamily: Font.extrabold,
   },
   prayerLine: {
     position: 'absolute',
-    top: 4,
+    top: 5,
     left: '50%',
     right: '-50%',
-    height: 1,
-    backgroundColor: Colors.borderLight,
+    height: 2,
+    backgroundColor: Colors.borderSoft,
     zIndex: -1,
   },
   contextualNoteRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
+    gap: 10,
+    backgroundColor: Colors.bgLight,
+    borderRadius: Radius.md,
+    padding: 10,
+  },
+  noteIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: Colors.tintSky,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   contextualNote: {
-    fontSize: 13,
+    fontSize: 14,
     color: Colors.textSecondary,
-    fontStyle: 'italic',
+    fontFamily: Font.medium,
     flex: 1,
   },
-  
+
   // Habits Card
   habitsCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
-    gap: 12,
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    gap: 10,
+    ...Shadows.card,
   },
   habitsHeader: {
     flexDirection: 'row',
@@ -866,94 +1067,97 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   habitsTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontFamily: Font.extrabold,
     color: Colors.textPrimary,
+    letterSpacing: -0.3,
+  },
+  countBadge: {
+    backgroundColor: Colors.tintAmber,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   habitsCount: {
     fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textSecondary,
+    fontFamily: Font.extrabold,
+    color: Colors.accentAmber,
   },
   habitsSubtitle: {
-    fontSize: 13,
-    color: Colors.textHint,
-    fontStyle: 'italic',
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontFamily: Font.medium,
   },
   habitTiles: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 8,
   },
   habitTile: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 20,
-    padding: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    gap: 6,
-    minWidth: 80,
+    backgroundColor: Colors.tintSlate,
+    borderRadius: Radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 8,
   },
   habitTileCompleted: {
-    backgroundColor: Colors.textPrimary,
-    borderColor: Colors.textPrimary,
+    backgroundColor: Colors.primary,
   },
   habitIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.primarySurface,
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    backgroundColor: Colors.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   habitIconCompleted: {
-    backgroundColor: Colors.primarySurface,
+    backgroundColor: Colors.white,
   },
   habitName: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 14,
+    fontFamily: Font.bold,
     color: Colors.textPrimary,
-    textAlign: 'center',
   },
   habitNameCompleted: {
     color: Colors.white,
   },
-  
+
   // Tasks Card
   tasksCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
-    gap: 12,
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    gap: 6,
+    ...Shadows.card,
   },
   tasksLead: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontFamily: Font.extrabold,
     color: Colors.textPrimary,
-    lineHeight: 24,
-    fontFamily: 'serif',
+    lineHeight: 28,
+    letterSpacing: -0.3,
+    marginBottom: 4,
   },
   taskRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: Colors.bgLight,
+    borderRadius: Radius.md,
   },
   taskBullet: {
     width: 20,
     height: 20,
-    borderRadius: 10,
+    borderRadius: 6,
     borderWidth: 2,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -963,8 +1167,8 @@ const styles = StyleSheet.create({
   },
   taskTitle: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 16,
+    fontFamily: Font.semibold,
     color: Colors.textPrimary,
   },
   taskTitleCompleted: {
@@ -972,37 +1176,36 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   taskCategory: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.textHint,
+    fontSize: 12,
+    fontFamily: Font.extrabold,
+    color: Colors.primary,
     textTransform: 'uppercase' as const,
-    backgroundColor: Colors.primarySurface,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    backgroundColor: Colors.tintOrange,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
   tasksFooter: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontFamily: Font.bold,
     color: Colors.primary,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 6,
   },
-  
+
   // Medication Card
   medicationCard: {
-    backgroundColor: Colors.textPrimary,
-    borderRadius: 14,
+    backgroundColor: Colors.tintRose,
+    borderRadius: Radius.lg,
     padding: 16,
     gap: 12,
   },
   medicationLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.white,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.8,
-    opacity: 0.8,
+    fontSize: 12,
+    fontFamily: Font.extrabold,
+    color: Colors.accentRose,
+    letterSpacing: 0.6,
   },
   medicationRow: {
     flexDirection: 'row',
@@ -1012,8 +1215,8 @@ const styles = StyleSheet.create({
   medicationIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surfaceDark,
+    borderRadius: 12,
+    backgroundColor: Colors.accentRose,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1021,50 +1224,47 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   medicationName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.white,
+    fontSize: 17,
+    fontFamily: Font.extrabold,
+    color: Colors.textPrimary,
   },
   medicationDosage: {
-    fontSize: 13,
-    color: Colors.white,
+    fontSize: 14,
+    color: Colors.textSecondary,
     marginTop: 2,
-    opacity: 0.8,
+    fontFamily: Font.medium,
   },
   medicationTime: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.white,
+    fontSize: 14,
+    fontFamily: Font.extrabold,
+    color: Colors.accentRose,
     textAlign: 'right',
-    opacity: 0.8,
   },
   medicationAllClear: {
-    fontSize: 14,
-    color: Colors.white,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginTop: 8,
-    opacity: 0.8,
+    fontSize: 15,
+    color: Colors.textSecondary,
+    fontFamily: Font.medium,
   },
-  
+
   // Progress bar (shared)
   progressTrack: {
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: Colors.borderLight,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.tintSlate,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
+    borderRadius: 3,
     backgroundColor: Colors.primary,
   },
-  
+
   // Sign-off
   signOff: {
-    fontSize: 12,
+    fontSize: 14,
     color: Colors.textHint,
     textAlign: 'center',
-    fontStyle: 'italic',
-    marginTop: 16,
+    fontFamily: Font.medium,
+    marginTop: 8,
   },
 });

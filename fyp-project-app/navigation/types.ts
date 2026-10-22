@@ -27,6 +27,8 @@ export type RootStackParamList = {
   More: undefined;
   EditProfile: undefined;
   Budget: undefined;
+  Transactions: undefined;
+  Subscriptions: undefined;
   AddTransaction: { transaction?: TransactionDto } | undefined;
   BudgetSettings: undefined;
 };

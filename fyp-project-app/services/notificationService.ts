@@ -1,4 +1,7 @@
 import * as Notifications from 'expo-notifications';
+import { formatMoney } from '../utils/budgetFormat';
+import { upcomingDueDates } from '../utils/subscriptions';
+import type { SubscriptionDto } from './budgetService';
 
 // Configure notification handler
 Notifications.setNotificationHandler({
@@ -80,5 +83,60 @@ export async function cancelHabitReminder(habitId: string): Promise<void> {
     await Notifications.cancelScheduledNotificationAsync(habitId);
   } catch (error) {
     console.error('Error cancelling habit reminder:', error);
+  }
+}
+
+/** Immediate local notification for a category budget that is nearly used up or exceeded. */
+export async function notifyBudgetAlert(title: string, body: string): Promise<void> {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body },
+      trigger: null,
+    });
+  } catch (error) {
+    console.warn('Failed to show budget notification', error);
+  }
+}
+
+const SUB_PREFIX = 'sub-';
+const REMINDER_HOUR = 9;
+const REMINDERS_PER_SUBSCRIPTION = 3;
+
+/**
+ * Re-creates the "due tomorrow" reminders for all active subscriptions.
+ * Each one fires at 9:00 the day before a due date; the next few cycles are
+ * scheduled so reminders keep coming even if the app is not opened for a while.
+ */
+export async function syncSubscriptionReminders(subscriptions: SubscriptionDto[], currency: string): Promise<void> {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(
+      scheduled
+        .filter((n) => n.identifier.startsWith(SUB_PREFIX))
+        .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
+    );
+
+    const now = new Date();
+    for (const sub of subscriptions) {
+      if (!sub.isActive) continue;
+      const dueDates = upcomingDueDates(sub.nextDueDate, sub.frequency, REMINDERS_PER_SUBSCRIPTION);
+      for (let i = 0; i < dueDates.length; i++) {
+        const [y, m, d] = dueDates[i].split('-').map(Number);
+        const remindAt = new Date(y, m - 1, d - 1, REMINDER_HOUR, 0, 0, 0);
+        if (remindAt <= now) continue;
+
+        await Notifications.scheduleNotificationAsync({
+          identifier: `${SUB_PREFIX}${sub.id}-${i}`,
+          content: {
+            title: 'Payment due tomorrow',
+            body: `${sub.name} \u00b7 ${currency} ${formatMoney(sub.amount)} is due tomorrow.`,
+            sound: 'default',
+          },
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: remindAt },
+        });
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to sync subscription reminders', error);
   }
 }

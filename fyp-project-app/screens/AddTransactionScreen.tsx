@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   BackHandler,
   Platform,
   Pressable,
@@ -14,16 +15,23 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
-import { createTransaction, updateTransaction, TransactionType } from '../services/budgetService';
+import {
+  createTransaction,
+  getCategoryBudgets,
+  updateTransaction,
+  TransactionType,
+} from '../services/budgetService';
+import { notifyBudgetAlert } from '../services/notificationService';
+import { DEFAULT_CATEGORIES, formatMoney, toDateStr } from '../utils/budgetFormat';
 import { toApiErrorMessage } from '../services/api';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type AddTransactionScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type AddTransactionScreenRouteProp = RouteProp<RootStackParamList, 'AddTransaction'>;
 
 function todayString() {
-  return new Date().toISOString().split('T')[0];
+  return toDateStr(new Date());
 }
 
 export function AddTransactionScreen() {
@@ -40,6 +48,19 @@ export function AddTransactionScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [budgetCategories, setBudgetCategories] = useState<string[]>([]);
+
+  // Categories that already have a budget are offered first so expenses land in them.
+  useEffect(() => {
+    getCategoryBudgets()
+      .then((list) => setBudgetCategories(list.map((b) => b.category)))
+      .catch(() => {});
+  }, []);
+
+  const categoryChips = [
+    ...budgetCategories,
+    ...DEFAULT_CATEGORIES.filter((c) => !budgetCategories.some((b) => b.toLowerCase() === c.toLowerCase())),
+  ];
 
   useEffect(() => {
     const backAction = () => {
@@ -53,7 +74,7 @@ export function AddTransactionScreen() {
   const handleDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (event.type === 'set' && selectedDate) {
-      setDate(selectedDate.toISOString().split('T')[0]);
+      setDate(toDateStr(selectedDate));
     }
   };
 
@@ -96,7 +117,18 @@ export function AddTransactionScreen() {
       if (isEditMode && editingTransaction) {
         await updateTransaction(editingTransaction.id, payload);
       } else {
-        await createTransaction(payload);
+        const created = await createTransaction(payload);
+        const alert = created.budgetAlert;
+        if (alert) {
+          const exceeded = alert.level === 'exceeded';
+          const title = exceeded ? `${alert.category} budget exceeded` : `${alert.category} budget almost used`;
+          const body = exceeded
+            ? `You have spent ${formatMoney(Number(alert.spent))} of ${formatMoney(Number(alert.limit))} (${alert.percent}%) this month.`
+            : `You have used ${alert.percent}% of your ${alert.category} budget this month.`;
+          notifyBudgetAlert(title, body);
+          Alert.alert(title, body, [{ text: 'OK', onPress: () => navigation.goBack() }], { cancelable: false });
+          return;
+        }
       }
 
       navigation.goBack();
@@ -156,6 +188,18 @@ export function AddTransactionScreen() {
 
         <View style={styles.formGroup}>
           <Text style={styles.formLabel}>Category (optional)</Text>
+          {type === 'expense' && (
+            <View style={styles.chipWrap}>
+              {categoryChips.map((c) => {
+                const active = category.trim().toLowerCase() === c.toLowerCase();
+                return (
+                  <Pressable key={c} style={[styles.chip, active && styles.chipActive]} onPress={() => setCategory(c)}>
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{c}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
           <TextInput
             style={styles.formInput}
             placeholder="e.g. Groceries"
@@ -231,22 +275,24 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.primary,
     textAlign: 'center',
     flex: 1,
+    letterSpacing: -0.3,
   },
   placeholder: {
     width: 60,
   },
   formCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
     marginHorizontal: 16,
     gap: 16,
+    ...Shadows.card,
   },
   formGroup: {
     gap: 8,
@@ -260,8 +306,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     paddingHorizontal: 12,
     fontSize: 16,
     color: Colors.textPrimary,
@@ -280,7 +326,7 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1.5,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     backgroundColor: Colors.white,
     justifyContent: 'center',
     alignItems: 'center',
@@ -304,8 +350,8 @@ const styles = StyleSheet.create({
   datePickerButton: {
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     height: 42,
     justifyContent: 'center',
     paddingHorizontal: 12,
@@ -316,11 +362,12 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    ...Shadows.button,
   },
   submitButtonDisabled: {
     backgroundColor: Colors.primaryLight,
@@ -329,6 +376,33 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: '700',
     fontSize: 16,
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  chipTextActive: {
+    color: Colors.white,
   },
   errorText: {
     color: Colors.error,
