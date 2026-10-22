@@ -23,7 +23,7 @@ import * as Device from 'expo-device';
 import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 
 interface PrayerTimes {
   Fajr: string;
@@ -838,8 +838,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
@@ -854,12 +855,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 8,
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.card,
   },
   loadingText: {
     fontSize: 16,
@@ -878,20 +880,21 @@ const styles = StyleSheet.create({
     height: 48,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 16,
     fontSize: 16,
     color: Colors.textPrimary,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.bgLight,
     marginBottom: 16,
   },
   fetchButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+    ...Shadows.button,
   },
   fetchButtonText: {
     color: Colors.white,
@@ -1035,8 +1038,9 @@ const styles = StyleSheet.create({
   },
   pickerTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   closeText: {
     fontSize: 16,
@@ -1053,19 +1057,20 @@ const styles = StyleSheet.create({
     height: 48,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 16,
     fontSize: 16,
     color: Colors.textPrimary,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.bgLight,
   },
   searchButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
+    ...Shadows.button,
   },
   searchButtonText: {
     color: Colors.white,
@@ -1111,19 +1116,15 @@ const styles = StyleSheet.create({
   },
   prayerCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
     marginBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    ...Shadows.card,
   },
   nextPrayerCard: {
     backgroundColor: '#dcfce7',
@@ -1179,8 +1180,9 @@ const styles = StyleSheet.create({
   },
   ramadanTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.primary,
+    letterSpacing: -0.3,
   },
   ramadanTimes: {
     gap: 8,

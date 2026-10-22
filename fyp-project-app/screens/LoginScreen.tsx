@@ -15,7 +15,7 @@ import type { NavigationProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { Colors } from '../constants/theme';
+import { Colors, Font, Radius, Shadows } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
 import { requestPasswordReset, resetPassword } from '../services/authService';
@@ -113,7 +113,7 @@ export function LoginScreen() {
         {/* SECTION 1 — APP LOGO */}
         <View style={styles.logoSection}>
           <View style={styles.iconContainer}>
-            <MaterialCommunityIcons name="leaf" size={22} color={Colors.white} />
+            <MaterialCommunityIcons name="leaf" size={32} color={Colors.white} />
           </View>
           <Text style={styles.appName}>Personal Companion</Text>
           <Text style={styles.tagline}>Your daily life, simplified</Text>
@@ -125,7 +125,7 @@ export function LoginScreen() {
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Email address</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={15} color={Colors.textHint} style={{ marginLeft: 2 }} />
+              <Ionicons name="mail-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
               <TextInput
                 style={styles.textInput}
                 value={email}
@@ -144,7 +144,7 @@ export function LoginScreen() {
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Password</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={15} color={Colors.textHint} style={{ marginLeft: 2 }} />
+              <Ionicons name="lock-closed-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
               <TextInput
                 style={styles.textInput}
                 value={password}
@@ -158,8 +158,8 @@ export function LoginScreen() {
               <Pressable onPress={() => setShowPassword(!showPassword)} style={{ marginRight: 2 }}>
                 <Ionicons 
                   name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                  size={15} 
-                  color={Colors.borderLight} 
+                  size={20} 
+                  color={Colors.textHint} 
                 />
               </Pressable>
             </View>
@@ -204,7 +204,7 @@ export function LoginScreen() {
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Email address</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="mail-outline" size={15} color={Colors.textHint} style={{ marginLeft: 2 }} />
+                  <Ionicons name="mail-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
                   <TextInput
                     style={styles.textInput}
                     value={resetEmail}
@@ -226,7 +226,7 @@ export function LoginScreen() {
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Reset code</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="key-outline" size={15} color={Colors.textHint} style={{ marginLeft: 2 }} />
+                  <Ionicons name="key-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
                   <TextInput
                     style={styles.textInput}
                     value={resetCode}
@@ -242,7 +242,7 @@ export function LoginScreen() {
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>New password</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="lock-closed-outline" size={15} color={Colors.textHint} style={{ marginLeft: 2 }} />
+                  <Ionicons name="lock-closed-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
                   <TextInput
                     style={styles.textInput}
                     value={resetPasswordValue}
@@ -287,54 +287,65 @@ const styles = StyleSheet.create({
   // Logo Section
   logoSection: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 32,
   },
   iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 76,
+    height: 76,
+    borderRadius: 22,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 14,
+    ...Shadows.button,
   },
   appName: {
-    fontSize: 22,
-    fontWeight: '500',
+    fontSize: 32,
+    fontFamily: Font.extrabold,
     color: Colors.textPrimary,
-    marginBottom: 2,
+    letterSpacing: -0.5,
+    marginBottom: 4,
   },
   tagline: {
-    fontSize: 14,
-    color: Colors.textHint,
+    fontSize: 16,
+    fontFamily: Font.medium,
+    color: Colors.textSecondary,
   },
 
   // Form Section
   formSection: {
     gap: 12,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    padding: 22,
+    ...Shadows.card,
   },
   fieldGroup: {
     marginBottom: 12,
   },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: 15,
+    fontFamily: Font.bold,
     color: Colors.textSecondary,
-    marginBottom: 4,
+    marginBottom: 8,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceLight,
+    backgroundColor: Colors.bgLight,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     padding: 10,
     paddingHorizontal: 12,
-    height: 42,
-    gap: 8,
+    height: 58,
+    gap: 10,
   },
   textInput: {
-    fontSize: 15,
+    fontFamily: Font.regular,
+    fontSize: 18,
     color: '#000000',
     flex: 1,
     padding: 0,
@@ -349,25 +360,27 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   forgotPasswordText: {
-    fontSize: 13,
+    fontSize: 16,
+    fontFamily: Font.bold,
     color: Colors.primary,
   },
 
   // Sign In Button
   signInButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 12,
-    height: 42,
+    borderRadius: Radius.md,
+    height: 58,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    ...Shadows.button,
   },
   signInButtonDisabled: {
     opacity: 0.7,
   },
   signInButtonText: {
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 18,
+    fontFamily: Font.bold,
     color: Colors.white,
   },
 
@@ -379,22 +392,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   signupText: {
-    fontSize: 13,
+    fontFamily: Font.regular,
+    fontSize: 16,
     color: Colors.textHint,
   },
   signupLink: {
-    fontSize: 13,
+    fontSize: 16,
     color: Colors.primary,
-    fontWeight: '500',
+    fontFamily: Font.bold,
   },
   resetPanel: {
     marginTop: 0,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     gap: 10,
+    ...Shadows.card,
   },
   resetOverlay: {
     flex: 1,
@@ -403,25 +418,27 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   resetTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 19,
+    fontFamily: Font.semibold,
     color: Colors.textPrimary,
   },
   resetSubtitle: {
-    fontSize: 13,
+    fontFamily: Font.regular,
+    fontSize: 16,
     color: Colors.textSecondary,
   },
   resetActionButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 10,
-    height: 40,
+    borderRadius: Radius.md,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.button,
   },
   resetActionText: {
     color: Colors.white,
-    fontWeight: '600',
-    fontSize: 13,
+    fontFamily: Font.semibold,
+    fontSize: 16,
   },
   resetActionsRow: {
     flexDirection: 'row',
@@ -431,15 +448,15 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 10,
-    height: 40,
+    borderRadius: Radius.md,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.surfaceLight,
   },
   resetSecondaryText: {
     color: Colors.textSecondary,
-    fontWeight: '600',
-    fontSize: 13,
+    fontFamily: Font.semibold,
+    fontSize: 16,
   },
 });

@@ -2,6 +2,9 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View } from 'react-native';
+
+import { Colors } from '../constants/theme';
 
 import type { MainTabParamList } from './types';
 import { HomeScreen } from '../screens/HomeScreen';
@@ -15,9 +18,17 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const tabIconMap: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
   Dashboard: 'home-outline',
   Tasks: 'checkbox-outline',
-  Habits: 'repeat-outline',
+  Habits: 'flame-outline',
   Weather: 'partly-sunny-outline',
   More: 'grid-outline',
+};
+
+const tabIconActiveMap: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
+  Dashboard: 'home',
+  Tasks: 'checkbox',
+  Habits: 'flame',
+  Weather: 'partly-sunny',
+  More: 'grid',
 };
 
 export function BottomTabs() {
@@ -28,34 +39,53 @@ export function BottomTabs() {
       screenOptions={({ route }) => ({
         headerShown: true,
         headerStyle: {
-          backgroundColor: '#ffffff',
+          backgroundColor: Colors.bgLight,
         },
         headerShadowVisible: false,
         headerTitleStyle: {
-          fontWeight: '700',
+          fontWeight: '800',
           fontSize: 18,
-          color: '#0f172a',
+          color: Colors.textPrimary,
         },
         sceneStyle: {
-          backgroundColor: '#eef2f7',
+          backgroundColor: Colors.bgLight,
         },
-        tabBarActiveTintColor: '#1d4ed8',
-        tabBarInactiveTintColor: '#64748b',
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textHint,
         tabBarStyle: {
-          paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
-          paddingTop: 4,
-          height: 60 + (insets.bottom > 0 ? insets.bottom : 0),
-          borderTopColor: '#e2e8f0',
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
+          paddingTop: 8,
+          height: 66 + (insets.bottom > 0 ? insets.bottom : 0),
+          borderTopColor: Colors.borderSoft,
           borderTopWidth: 1,
-          backgroundColor: '#ffffff',
+          backgroundColor: Colors.surfaceLight,
+          shadowColor: '#0F172A',
+          shadowOpacity: 0.05,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: -4 },
+          elevation: 8,
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '700',
+          marginTop: 2,
         },
-        tabBarIcon: ({ color, size }) => {
-          const iconName = tabIconMap[route.name as keyof MainTabParamList] ?? 'ellipse-outline';
-          return <Ionicons name={iconName} size={size} color={color} />;
+        tabBarIcon: ({ color, focused }) => {
+          const key = route.name as keyof MainTabParamList;
+          const iconName = (focused ? tabIconActiveMap[key] : tabIconMap[key]) ?? 'ellipse-outline';
+          return (
+            <View
+              style={{
+                width: 44,
+                height: 28,
+                borderRadius: 14,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: focused ? Colors.tintOrange : 'transparent',
+              }}>
+              <Ionicons name={iconName} size={20} color={color} />
+            </View>
+          );
         },
       })}>
       <Tab.Screen name="Dashboard" component={HomeScreen} options={{ headerShown: false }} />

@@ -14,7 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { getToday, upsertToday, WorkoutLogEntry } from '../services/fitnessService';
 import { toApiErrorMessage } from '../services/api';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type LogFitnessScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -244,22 +244,24 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.primary,
     textAlign: 'center',
     flex: 1,
+    letterSpacing: -0.3,
   },
   placeholder: {
     width: 60,
   },
   formCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
     marginHorizontal: 16,
     gap: 16,
+    ...Shadows.card,
   },
   formGroup: {
     gap: 8,
@@ -273,8 +275,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     paddingHorizontal: 12,
     fontSize: 16,
     color: Colors.textPrimary,
@@ -313,11 +315,12 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    ...Shadows.button,
   },
   submitButtonDisabled: {
     backgroundColor: Colors.primaryLight,

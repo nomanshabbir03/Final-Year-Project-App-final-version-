@@ -42,7 +42,7 @@ import {
   getTodayStepCount as getDeviceStepCountToday,
 } from '../services/pedometerService';
 import { toApiErrorMessage } from '../services/api';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 // Device step count is deliberately a separate, informational number that requires an
@@ -844,8 +844,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
@@ -872,9 +873,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     padding: 20,
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
+    ...Shadows.card,
   },
   emptyIcon: {
     fontSize: 40,
@@ -894,11 +896,12 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     paddingVertical: 14,
     alignItems: 'center',
+    ...Shadows.card,
   },
   statValue: {
     fontSize: 20,
@@ -912,12 +915,13 @@ const styles = StyleSheet.create({
   },
   logButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 16,
     marginBottom: 20,
+    ...Shadows.button,
   },
   logButtonText: {
     color: Colors.white,
@@ -930,17 +934,19 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
     marginBottom: 10,
+    letterSpacing: -0.3,
   },
   deviceStepsCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 14,
     gap: 8,
+    ...Shadows.card,
   },
   deviceStepsLoadingRow: {
     flexDirection: 'row',
@@ -1002,11 +1008,12 @@ const styles = StyleSheet.create({
   },
   waterCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 14,
     gap: 10,
+    ...Shadows.card,
   },
   waterAmountText: {
     fontSize: 16,
@@ -1035,12 +1042,13 @@ const styles = StyleSheet.create({
   },
   goalCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
     marginBottom: 10,
     gap: 6,
+    ...Shadows.card,
   },
   goalLabel: {
     fontSize: 15,
@@ -1064,10 +1072,11 @@ const styles = StyleSheet.create({
   },
   trendsCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
+    ...Shadows.card,
   },
   trendsHeaderRow: {
     flexDirection: 'row',
@@ -1119,10 +1128,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     gap: 10,
+    ...Shadows.card,
   },
   routinesEmptyText: {
     fontSize: 13,
@@ -1131,11 +1141,12 @@ const styles = StyleSheet.create({
   },
   newRoutineButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 38,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.button,
   },
   newRoutineButtonText: {
     color: Colors.white,
@@ -1146,11 +1157,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
     gap: 10,
+    ...Shadows.card,
   },
   routineInfo: {
     flex: 1,
@@ -1172,11 +1184,12 @@ const styles = StyleSheet.create({
   },
   logRoutineButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 34,
     paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.button,
   },
   logRoutineButtonDisabled: {
     opacity: 0.5,
@@ -1208,11 +1221,12 @@ const styles = StyleSheet.create({
   },
   routineFormCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 14,
     gap: 10,
+    ...Shadows.card,
   },
   routineFormTitle: {
     fontSize: 15,
@@ -1223,8 +1237,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     paddingHorizontal: 12,
     fontSize: 16,
     color: Colors.textPrimary,
@@ -1267,7 +1281,7 @@ const styles = StyleSheet.create({
   modeChip: {
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 16,
+    borderRadius: Radius.md,
     paddingHorizontal: 12,
     paddingVertical: 6,
     backgroundColor: Colors.white,
@@ -1321,10 +1335,11 @@ const styles = StyleSheet.create({
   saveRoutineButton: {
     flex: 1,
     height: 42,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.button,
   },
   saveButtonDisabled: {
     backgroundColor: Colors.primaryLight,

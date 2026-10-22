@@ -20,7 +20,7 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Notifications } from '../services/notifications';
 
-import { Colors, Fonts } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 import { requestNotificationPermissions } from '../services/notificationService';
@@ -544,21 +544,19 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    ...Shadows.card,
   },
   topBarTitle: {
     flex: 1,
     textAlign: 'center',
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
-    fontFamily: Fonts.serif,
+    letterSpacing: -0.3,
   },
   topBarSpacer: {
     width: 40,
@@ -566,9 +564,10 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: Colors.primary,
     marginHorizontal: 16,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     padding: 24,
     marginBottom: 16,
+    ...Shadows.button,
   },
   heroRow: {
     flexDirection: 'row',
@@ -591,7 +590,9 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#1a3d2b',
+    backgroundColor: Colors.textPrimary,
+    borderWidth: 2,
+    borderColor: Colors.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -613,7 +614,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.white,
     marginBottom: 4,
-    fontFamily: Fonts.serif,
   },
   userEmail: {
     fontSize: 14,
@@ -663,7 +663,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: 20,
     lineHeight: 28,
-    fontFamily: Fonts.serif,
   },
   statsTiles: {
     flexDirection: 'row',
@@ -698,9 +697,9 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
-    fontFamily: Fonts.serif,
+    letterSpacing: -0.3,
   },
   sectionHint: {
     fontSize: 12,
@@ -710,12 +709,10 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surfaceLight,
     marginHorizontal: 16,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    ...Shadows.card,
   },
   row: {
     flexDirection: 'row',
@@ -777,7 +774,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.textPrimary,
-    fontFamily: Fonts.serif,
     fontStyle: 'italic',
   },
   footerSubtitle: {

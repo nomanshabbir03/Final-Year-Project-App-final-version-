@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppContext } from '../context/AppContext';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type AllTasksScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -375,8 +375,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   listContent: {
     padding: 16,
@@ -389,16 +390,12 @@ const styles = StyleSheet.create({
   },
   taskCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
     gap: 6,
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    ...Shadows.card,
   },
   taskHeader: {
     flexDirection: 'row',
@@ -473,16 +470,17 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.xl,
     padding: 20,
     width: '80%',
     maxWidth: 300,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
     marginBottom: 16,
+    letterSpacing: -0.3,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -506,6 +504,7 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: Colors.primary,
+    ...Shadows.button,
   },
   label: {
     color: Colors.textSecondary,
@@ -516,8 +515,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     paddingHorizontal: 10,
     marginBottom: 12,
   },
@@ -528,8 +527,8 @@ const styles = StyleSheet.create({
   pickerWrap: {
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     marginBottom: 12,
   },
   loadingOverlay: {
@@ -545,7 +544,7 @@ const styles = StyleSheet.create({
   },
   selectedTaskModalContent: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
+    borderRadius: Radius.xl,
     padding: 24,
     width: '80%',
     maxWidth: 300,
@@ -553,10 +552,11 @@ const styles = StyleSheet.create({
   },
   selectedTaskTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
     marginBottom: 16,
     textAlign: 'center',
+    letterSpacing: -0.3,
   },
   selectedTaskMeta: {
     fontSize: 14,
@@ -566,10 +566,11 @@ const styles = StyleSheet.create({
   },
   selectedTaskCloseButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 20,
     paddingVertical: 10,
     marginTop: 16,
+    ...Shadows.button,
   },
   selectedTaskCloseButtonText: {
     color: Colors.white,

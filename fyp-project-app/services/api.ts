@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 
-const BACKEND_PORT = 8000;
+const BACKEND_PORT = 8080;
 
 // NOTE: the Django routes are NOT all under /api (auth/, medications/, habits/ ... are at the
 // root while budget and fitness live under /api/...), and the screens already include the
@@ -28,7 +28,7 @@ function resolveBackendUrl() {
 
   console.warn(
     'Backend URL could not be determined. Create fyp-project-app/.env.local with ' +
-      'EXPO_PUBLIC_BACKEND_URL=http://<PC-LAN-IP>:8000 (see .env.example) and restart with `npx expo start -c`.'
+      'EXPO_PUBLIC_BACKEND_URL=http://<PC-LAN-IP>:8080 (see .env.example) and restart with `npx expo start -c`.'
   );
   return { url: `http://localhost:${BACKEND_PORT}`, source: 'unresolved (last-resort localhost)' };
 }

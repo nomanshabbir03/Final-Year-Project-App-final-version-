@@ -12,7 +12,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { Svg, Rect, Text as SvgText } from 'react-native-svg';
 import { useAppContext } from '../context/AppContext';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import { getHabitHistory } from '../services/habitService';
 
 const CELL_SIZE = 14;
@@ -127,10 +127,10 @@ export function HabitAnalyticsScreen() {
     if (!hasData) return '#ebedf0'; // No data
     
     if (ratio === 0) return '#ebedf0'; // 0% - light grey
-    if (ratio <= 0.33) return '#c6e48b'; // 1-33% - light green
-    if (ratio <= 0.66) return '#7bc96f'; // 34-66% - medium green
-    if (ratio <= 0.99) return '#239a3b'; // 67-99% - dark green
-    return '#196127'; // 100% - darkest green
+    if (ratio <= 0.33) return '#FFD8C2'; // 1-33% - light orange
+    if (ratio <= 0.66) return '#FFA274'; // 34-66% - medium orange
+    if (ratio <= 0.99) return '#FF6B2C'; // 67-99% - dark orange
+    return '#C2410C'; // 100% - darkest orange
   };
 
   const renderHeatmap = () => {
@@ -325,10 +325,11 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
     textAlign: 'center',
     marginTop: 12,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
@@ -348,13 +349,14 @@ const styles = StyleSheet.create({
   },
   statCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     padding: 16,
     alignItems: 'center',
     flex: 1,
     marginHorizontal: 4,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
+    ...Shadows.card,
   },
   statNumber: {
     fontSize: 24,

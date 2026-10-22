@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NavigationProp, RouteProp } from '@react-navigation/native';
 
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import { useAppContext } from '../context/AppContext';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -367,8 +367,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   formInput: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: width * 0.03,
+    backgroundColor: Colors.bgLight,
+    borderRadius: Radius.md,
     padding: width * 0.04,
     fontSize: width * 0.04,
     borderWidth: 1,
@@ -423,6 +423,7 @@ const styles = StyleSheet.create({
     paddingVertical: height * 0.02,
     alignItems: 'center',
     marginTop: height * 0.03,
+    ...Shadows.button,
   },
   saveButtonText: {
     color: Colors.white,

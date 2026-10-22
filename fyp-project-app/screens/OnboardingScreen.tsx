@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
@@ -6,254 +6,257 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
-  Dimensions,
+  FlatList,
   StatusBar,
+  useWindowDimensions,
 } from 'react-native';
 import { useNavigation, type NavigationProp } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+
 import { RootStackParamList } from '../navigation/types';
-import { Colors } from '../constants/theme';
-
-const { width } = Dimensions.get('window');
-
-type OnboardingScreenNavigationProp = NavigationProp<RootStackParamList, 'Login'>;
+import { Colors, Font, Radius, Shadows } from '../constants/theme';
+import {
+  ChatbotIllustration,
+  FitnessIllustration,
+  MedicineIllustration,
+  BudgetIllustration,
+  DashboardIllustration,
+} from '../components/OnboardingIllustrations';
 
 interface Slide {
-  emoji: string;
+  key: string;
+  eyebrow: string;
   title: string;
   description: string;
+  Illustration: React.ComponentType;
 }
 
 const slides: Slide[] = [
   {
-    emoji: '🕌',
-    title: 'Prayer Times',
-    description: 'Never miss a prayer. Get accurate daily prayer times based on your location, Qibla direction, and Ramadan timings.',
+    key: 'chatbot',
+    eyebrow: 'AI CHATBOT',
+    title: 'Ask. Get answers instantly.',
+    description: 'Chat with your in-app assistant to check your budget, set reminders and get quick help — by text or voice.',
+    Illustration: ChatbotIllustration,
   },
   {
-    emoji: '💊',
-    title: 'Medication Reminder',
-    description: 'Stay on top of your health. Track medications, get timely dose reminders, and never miss a refill.',
+    key: 'fitness',
+    eyebrow: 'FITNESS',
+    title: 'Move more, feel better',
+    description: 'Track workouts, steps and calories, set goals and watch your progress grow every day.',
+    Illustration: FitnessIllustration,
   },
   {
-    emoji: '✅',
-    title: 'Smart Task Management',
-    description: 'Organize your tasks with priorities, deadlines and calendar view.',
+    key: 'medicine',
+    eyebrow: 'MEDICINE',
+    title: 'Never miss a dose',
+    description: 'Schedule medications, get timely reminders and keep a clear history of what you have taken.',
+    Illustration: MedicineIllustration,
   },
   {
-    emoji: '🌱',
-    title: 'Build Better Habits',
-    description: 'Track daily habits, build streaks and analyze your progress.',
+    key: 'budget',
+    eyebrow: 'BUDGET',
+    title: 'Spend smarter, save more',
+    description: 'Log income and expenses, set monthly limits and see exactly where your money goes.',
+    Illustration: BudgetIllustration,
   },
   {
-    emoji: '🌤️',
-    title: 'Weather at a Glance',
-    description: 'Real-time weather with hourly and daily forecasts for your city.',
+    key: 'dashboard',
+    eyebrow: 'SMART DASHBOARD',
+    title: 'Your whole day, one screen',
+    description: 'Tasks, habits, prayer times, weather and more — everything that matters, at a glance.',
+    Illustration: DashboardIllustration,
   },
 ];
 
 export function OnboardingScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
-  const slidesRef = useRef<any>(null);
+  const listRef = useRef<FlatList<Slide>>(null);
 
-  const handleNext = () => {
-    if (currentIndex < slides.length - 1) {
-      const nextIndex = currentIndex + 1;
-      setCurrentIndex(nextIndex);
-      slidesRef.current?.scrollToIndex({ index: nextIndex, animated: true });
-    } else {
-      handleGetStarted();
-    }
-  };
+  const isLast = currentIndex === slides.length - 1;
 
-  const handleSkip = () => {
-    handleGetStarted();
-  };
-
-  const handleGetStarted = async () => {
-    // Mark onboarding as complete and navigate to Login
+  const finish = async () => {
     try {
       await AsyncStorage.setItem('onboarding_complete', 'true');
     } catch (error) {
       console.error('Failed to save onboarding status:', error);
     } finally {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Login' }],
-      });
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
     }
   };
 
-  const handleScroll = Animated.event(
-    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-    {
-      useNativeDriver: false,
-      listener: (event: any) => {
-        const index = Math.round(event.nativeEvent.contentOffset.x / width);
-        setCurrentIndex(index);
-      },
+  const handleNext = () => {
+    if (isLast) {
+      finish();
+      return;
     }
-  );
+    listRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
+  };
 
-  const renderSlide = (item: Slide, index: number) => {
-    return (
-      <View key={index} style={[styles.slide, { width }]}>
-        <View style={styles.emojiContainer}>
-          <Text style={styles.emoji}>{item.emoji}</Text>
-        </View>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.description}>{item.description}</Text>
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+
+      {/* Soft orange glow behind the illustrations */}
+      <View style={styles.glow} />
+
+      {/* Top bar: step counter + skip */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+        <Text style={styles.step}>
+          {currentIndex + 1}
+          <Text style={styles.stepTotal}> / {slides.length}</Text>
+        </Text>
+        {!isLast && (
+          <TouchableOpacity style={styles.skip} onPress={finish} hitSlop={10}>
+            <Text style={styles.skipText}>Skip</Text>
+          </TouchableOpacity>
+        )}
       </View>
-    );
-  };
 
-  const renderDots = () => {
-    return (
-      <View style={styles.dotsContainer}>
-        {slides.map((_, index) => {
-          const dotWidth = scrollX.interpolate({
-            inputRange: [
-              (index - 1) * width,
-              index * width,
-              (index + 1) * width,
-            ],
-            outputRange: [8, 20, 8],
-            extrapolate: 'clamp',
-          });
+      <Animated.FlatList
+        ref={listRef as any}
+        data={slides}
+        keyExtractor={(item) => item.key}
+        horizontal
+        pagingEnabled
+        bounces={false}
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
+          useNativeDriver: false,
+          listener: (e: any) =>
+            setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / width)),
+        })}
+        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        renderItem={({ item }) => (
+          <View style={[styles.slide, { width }]}>
+            <View style={styles.illustrationBox}>
+              <item.Illustration />
+            </View>
+            <View style={styles.eyebrowPill}>
+              <Text style={styles.eyebrowText}>{item.eyebrow}</Text>
+            </View>
+            <Text style={styles.title}>{item.title}</Text>
+            <Text style={styles.description}>{item.description}</Text>
+          </View>
+        )}
+      />
 
-          const dotOpacity = scrollX.interpolate({
-            inputRange: [
-              (index - 1) * width,
-              index * width,
-              (index + 1) * width,
-            ],
-            outputRange: [0.3, 1, 0.3],
-            extrapolate: 'clamp',
-          });
-
+      {/* Dots */}
+      <View style={styles.dots}>
+        {slides.map((_, i) => {
+          const range = [(i - 1) * width, i * width, (i + 1) * width];
           return (
             <Animated.View
-              key={index}
+              key={i}
               style={[
                 styles.dot,
                 {
-                  width: dotWidth,
-                  opacity: dotOpacity,
+                  width: scrollX.interpolate({
+                    inputRange: range,
+                    outputRange: [10, 28, 10],
+                    extrapolate: 'clamp',
+                  }),
+                  opacity: scrollX.interpolate({
+                    inputRange: range,
+                    outputRange: [0.3, 1, 0.3],
+                    extrapolate: 'clamp',
+                  }),
                 },
               ]}
             />
           );
         })}
       </View>
-    );
-  };
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
-      {/* Skip Button - Only show on first 2 slides */}
-      {currentIndex < slides.length - 1 && (
-        <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-          <Text style={styles.skipText}>Skip</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Slides */}
-      <Animated.FlatList
-        ref={slidesRef}
-        data={slides}
-        renderItem={({ item, index }) => renderSlide(item, index)}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        pagingEnabled
-        bounces={false}
-        keyExtractor={(item, index) => index.toString()}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-      />
-
-      {/* Dots */}
-      {renderDots()}
-
-      {/* Next/Get Started Button */}
-      <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-        <Text style={styles.nextButtonText}>
-          {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
-        </Text>
+      {/* CTA */}
+      <TouchableOpacity
+        style={[styles.cta, { marginBottom: Math.max(insets.bottom, 16) + 12 }]}
+        onPress={handleNext}
+        activeOpacity={0.9}
+      >
+        <Text style={styles.ctaText}>{isLast ? 'Get Started' : 'Next'}</Text>
+        <Ionicons name="arrow-forward" size={20} color={Colors.white} />
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  skipButton: {
+  container: { flex: 1, backgroundColor: Colors.white },
+  glow: {
     position: 'absolute',
-    top: 50,
-    right: 20,
-    zIndex: 1,
+    top: -120,
+    alignSelf: 'center',
+    width: 520,
+    height: 520,
+    borderRadius: 260,
+    backgroundColor: Colors.primarySurface,
   },
-  skipText: {
-    fontSize: 16,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
-  slide: {
-    flex: 1,
-    justifyContent: 'center',
+  topBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    height: 96,
   },
-  emojiContainer: {
-    marginBottom: 40,
+  step: { fontFamily: Font.extrabold, fontSize: 20, color: Colors.primary },
+  stepTotal: { fontFamily: Font.semibold, fontSize: 16, color: Colors.textHint },
+  skip: {
+    backgroundColor: Colors.white,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: Radius.pill,
+    ...Shadows.card,
   },
-  emoji: {
-    fontSize: 80,
-    textAlign: 'center',
+  skipText: { fontFamily: Font.bold, fontSize: 15, color: Colors.primary },
+
+  slide: { flex: 1, alignItems: 'center', paddingHorizontal: 28 },
+  illustrationBox: { height: 350, justifyContent: 'center', alignItems: 'center' },
+  eyebrowPill: {
+    backgroundColor: Colors.primarySurface,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginTop: 14,
   },
+  eyebrowText: { fontFamily: Font.extrabold, fontSize: 13, color: Colors.primary, letterSpacing: 1 },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontFamily: Font.extrabold,
+    fontSize: 30,
+    lineHeight: 38,
     color: Colors.textPrimary,
     textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 34,
+    letterSpacing: -0.6,
+    marginTop: 12,
   },
   description: {
-    fontSize: 16,
+    fontFamily: Font.medium,
+    fontSize: 17,
+    lineHeight: 26,
     color: Colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 20,
+    marginTop: 10,
   },
-  dotsContainer: {
+
+  dots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginVertical: 20 },
+  dot: { height: 10, borderRadius: 5, backgroundColor: Colors.primary, marginHorizontal: 4 },
+
+  cta: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  dot: {
-    height: 8,
-    borderRadius: 4,
+    gap: 10,
     backgroundColor: Colors.primary,
-    marginHorizontal: 4,
+    marginHorizontal: 24,
+    paddingVertical: 18,
+    borderRadius: Radius.lg,
+    ...Shadows.button,
   },
-  nextButton: {
-    backgroundColor: Colors.primary,
-    marginHorizontal: 20,
-    marginBottom: 40,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  nextButtonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
+  ctaText: { fontFamily: Font.bold, fontSize: 19, color: Colors.white },
 });

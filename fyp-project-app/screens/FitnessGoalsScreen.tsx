@@ -25,7 +25,7 @@ import {
   GoalType,
 } from '../services/fitnessService';
 import { toApiErrorMessage } from '../services/api';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type FitnessGoalsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -230,10 +230,11 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.primary,
     textAlign: 'center',
     flex: 1,
+    letterSpacing: -0.3,
   },
   placeholder: {
     width: 60,
@@ -244,12 +245,13 @@ const styles = StyleSheet.create({
   },
   formCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 14,
     marginBottom: 16,
     gap: 10,
+    ...Shadows.card,
   },
   formTitle: {
     fontSize: 16,
@@ -259,25 +261,26 @@ const styles = StyleSheet.create({
   pickerWrap: {
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
   },
   formInput: {
     height: 42,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     paddingHorizontal: 12,
     fontSize: 16,
     color: Colors.textPrimary,
   },
   saveButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.button,
   },
   saveButtonDisabled: {
     backgroundColor: Colors.primaryLight,
@@ -304,11 +307,12 @@ const styles = StyleSheet.create({
   },
   goalCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
     gap: 8,
+    ...Shadows.card,
   },
   goalCardInactive: {
     opacity: 0.6,

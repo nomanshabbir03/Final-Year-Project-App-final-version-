@@ -18,7 +18,7 @@ import type { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 
-import { Colors, Fonts } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import { api, toApiErrorMessage } from '../services/api';
 
@@ -314,10 +314,10 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
-    fontFamily: Fonts.serif,
     marginHorizontal: 16,
+    letterSpacing: -0.3,
   },
   headerSpacer: {
     width: 40,
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1a3d2b',
+    backgroundColor: Colors.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
@@ -383,8 +383,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textInput: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 12,
+    backgroundColor: Colors.bgLight,
+    borderRadius: Radius.md,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
@@ -417,10 +417,11 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.button,
   },
   saveButtonDisabled: {
     backgroundColor: Colors.borderLight,
