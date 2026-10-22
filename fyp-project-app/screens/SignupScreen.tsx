@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View, Alert } from 'react-nativ
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
@@ -134,8 +134,8 @@ const styles = StyleSheet.create({
     height: 44,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 10,
-    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     paddingHorizontal: 12,
   },
   error: {
@@ -144,10 +144,11 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     height: 46,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.button,
   },
   primaryButtonText: {
     color: Colors.white,

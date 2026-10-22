@@ -18,7 +18,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { useAppContext } from '../context/AppContext';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 import { api } from '../services/api';
 
@@ -361,21 +361,23 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 24,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
     textAlign: 'center',
     flex: 1,
+    letterSpacing: -0.3,
   },
   placeholder: {
     width: 60,
   },
   formCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
     gap: 16,
+    ...Shadows.card,
   },
   formGroup: {
     gap: 8,
@@ -389,8 +391,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     paddingHorizontal: 12,
     fontSize: 16,
     fontWeight: '400',
@@ -410,7 +412,7 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1.5,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     backgroundColor: Colors.white,
     justifyContent: 'center',
     alignItems: 'center',
@@ -418,6 +420,7 @@ const styles = StyleSheet.create({
   priorityButtonActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
+    ...Shadows.button,
   },
   priorityButtonText: {
     fontSize: 14,
@@ -430,16 +433,16 @@ const styles = StyleSheet.create({
   pickerWrap: {
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     height: 42,
     justifyContent: 'center',
   },
   datePickerButton: {
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     height: 42,
     justifyContent: 'center',
     paddingHorizontal: 12,
@@ -451,11 +454,12 @@ const styles = StyleSheet.create({
   },
   addTaskButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    ...Shadows.button,
   },
   addTaskButtonDisabled: {
     backgroundColor: Colors.primaryLight,
@@ -479,8 +483,8 @@ const styles = StyleSheet.create({
     height: 80,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 8,
@@ -517,7 +521,7 @@ const styles = StyleSheet.create({
   removeAttachmentText: {
     color: Colors.white,
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   attachmentFileName: {
     marginTop: 8,

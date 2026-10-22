@@ -13,7 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { api, parseJsonData, toApiErrorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type MedicationHistoryScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -378,10 +378,11 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.primary,
     textAlign: 'center',
     flex: 1,
+    letterSpacing: -0.3,
   },
   headerSpacer: {
     width: 60,
@@ -398,11 +399,11 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     backgroundColor: Colors.white,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
   },
   statValue: {
     fontSize: 20,
@@ -468,7 +469,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: Radius.md,
+    ...Shadows.button,
   },
   retryButtonText: {
     color: Colors.white,
@@ -501,16 +503,11 @@ const styles = StyleSheet.create({
   },
   logCard: {
     backgroundColor: Colors.white,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    ...Shadows.card,
   },
   logHeader: {
     flexDirection: 'row',

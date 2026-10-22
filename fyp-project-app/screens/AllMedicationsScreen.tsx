@@ -16,7 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { api, parseJsonData, toApiErrorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type AllMedicationsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -287,8 +287,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -299,16 +300,12 @@ const styles = StyleSheet.create({
   },
   medicationCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 16,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
     marginBottom: 12,
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    ...Shadows.card,
   },
   medicationHeader: {
     flexDirection: 'row',
@@ -432,9 +429,10 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 24,
     paddingVertical: 12,
+    ...Shadows.button,
   },
   retryButtonText: {
     color: Colors.white,

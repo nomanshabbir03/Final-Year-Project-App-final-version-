@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppContext } from '../context/AppContext';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type AddHabitScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -152,21 +152,23 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 24,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
     textAlign: 'center',
     flex: 1,
+    letterSpacing: -0.3,
   },
   placeholder: {
     width: 60,
   },
   formCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
     gap: 16,
+    ...Shadows.card,
   },
   label: {
     fontSize: 14,
@@ -177,8 +179,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     paddingHorizontal: 12,
     fontSize: 16,
     fontWeight: '400',
@@ -187,8 +189,8 @@ const styles = StyleSheet.create({
   pickerWrap: {
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
     height: 42,
     justifyContent: 'center',
   },
@@ -198,11 +200,12 @@ const styles = StyleSheet.create({
   },
   addButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    ...Shadows.button,
   },
   addButtonDisabled: {
     backgroundColor: Colors.primaryLight,

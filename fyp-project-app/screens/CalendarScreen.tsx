@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#FF6B2C',
   },
   navButton: {
     padding: 10,
@@ -210,11 +210,11 @@ const styles = StyleSheet.create({
   navButtonText: {
     fontSize: 24,
     color: '#ffffff',
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   monthYear: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#ffffff',
   },
   weekContainer: {
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#64748b',
   },
   calendarContainer: {
@@ -254,8 +254,8 @@ const styles = StyleSheet.create({
     borderColor: '#3b82f6',
   },
   selectedDay: {
-    backgroundColor: '#1d4ed8',
-    borderColor: '#1d4ed8',
+    backgroundColor: '#FF6B2C',
+    borderColor: '#FF6B2C',
   },
   dayText: {
     fontSize: 14,
@@ -265,8 +265,8 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
   },
   todayText: {
-    color: '#1d4ed8',
-    fontWeight: 'bold',
+    color: '#FF6B2C',
+    fontWeight: '700',
   },
   taskIndicator: {
     position: 'absolute',
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
   taskIndicatorText: {
     fontSize: 10,
     color: '#ffffff',
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   selectedInfo: {
     padding: 20,
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   },
   selectedDateText: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#1f2937',
     marginBottom: 5,
   },

@@ -6,48 +6,85 @@
 import { Platform } from 'react-native';
 
 export const Colors = {
-  primary: '#1D9E75',        // Forest green — main CTA, active states, buttons
-  primaryLight: '#5DCAA5',   // Lighter green — hover, highlights
-  primarySurface: '#D4EDDA', // Soft green surface — card backgrounds, chips
-  accentOlive: '#639922',    // Olive green — secondary accent
-  accentAmber: '#BA7517',    // Amber — weather module, warm indicators
-  accentBlue: '#185FA5',     // Blue — analytics, progress module
-  accentTeal: '#0F6E56',     // Deep teal — darker green accent
+  primary: '#FF6B2C',        // Sunset orange — main CTA, active states, buttons
+  primaryLight: '#FF8A55',   // Lighter orange — hover, highlights
+  primarySurface: '#FFF3ED', // Soft orange tint — card backgrounds, chips
+  accentOlive: '#EA580C',    // Deep orange — secondary accent
+  accentAmber: '#F59E0B',    // Amber — weather module, warm indicators
+  accentBlue: '#6366F1',     // Indigo — analytics, progress module
+  accentTeal: '#0EA5E9',     // Sky blue — fitness / profile accent
 
-  bgLight: '#F4FAF5',        // App background — light mode
-  bgDark: '#0F1A14',         // App background — dark mode
+  bgLight: '#F8FAFC',        // App background — light mode
+  bgDark: '#0F1117',         // App background — dark mode
   surfaceLight: '#FFFFFF',   // Card surface — light mode
-  surfaceDark: '#162318',    // Card surface — dark mode
-  borderLight: '#C8E6C9',    // Border — light mode
-  borderDark: '#1B3A24',     // Border — dark mode
+  surfaceDark: '#181B23',    // Card surface — dark mode
+  borderLight: '#E2E8F0',    // Border — light mode
+  borderDark: '#262A36',     // Border — dark mode
+  borderSoft: '#F1F5F9',     // Hairline card border — light mode
 
-  textPrimary: '#1A2E1E',    // Main text — light mode
-  textPrimaryDark: '#E8F5E9',// Main text — dark mode
-  textSecondary: '#4A7C59',  // Muted text — light mode
-  textSecondaryDark: '#5DAA7A', // Muted text — dark mode
-  textHint: '#7DA888',       // Hint/placeholder text
+  // Pastel tints + solid accents used for module tiles (prototype style)
+  tintOrange: '#FFF3ED',
+  tintAmber: '#FFFBEB',
+  tintSky: '#F0F9FF',
+  tintIndigo: '#EEF2FF',
+  tintRose: '#FFF1F2',
+  tintSlate: '#F1F5F9',
+  accentRose: '#F43F5E',
 
-  success: '#1D9E75',
-  warning: '#BA7517',
-  error: '#C0392B',
+  textPrimary: '#18181B',    // Main text — light mode
+  textPrimaryDark: '#FFFFFF',// Main text — dark mode
+  textSecondary: '#64748B',  // Muted text — light mode
+  textSecondaryDark: '#94A3B8', // Muted text — dark mode
+  textHint: '#94A3B8',       // Hint/placeholder text
+
+  success: '#10B981',
+  warning: '#F59E0B',
+  error: '#F43F5E',
   white: '#FFFFFF',
 
   // Legacy theme structure for backward compatibility
   light: {
-    text: '#1A2E1E',
-    background: '#F4FAF5',
-    tint: '#1D9E75',
-    icon: '#4A7C59',
-    tabIconDefault: '#7DA888',
-    tabIconSelected: '#1D9E75',
+    text: '#18181B',
+    background: '#F8FAFC',
+    tint: '#FF6B2C',
+    icon: '#64748B',
+    tabIconDefault: '#94A3B8',
+    tabIconSelected: '#FF6B2C',
   },
   dark: {
-    text: '#E8F5E9',
-    background: '#0F1A14',
-    tint: '#5DCAA5',
-    icon: '#5DAA7A',
-    tabIconDefault: '#7DA888',
-    tabIconSelected: '#5DCAA5',
+    text: '#FFFFFF',
+    background: '#0F1117',
+    tint: '#FF6B2C',
+    icon: '#94A3B8',
+    tabIconDefault: '#94A3B8',
+    tabIconSelected: '#FF6B2C',
+  },
+};
+
+export const Radius = {
+  sm: 10,
+  md: 14,   // buttons, inputs, chips
+  lg: 20,   // cards
+  xl: 24,   // hero cards
+  pill: 999,
+};
+
+export const Shadows = {
+  // Soft, wide shadow used on white cards
+  card: {
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  // Orange glow under primary buttons
+  button: {
+    shadowColor: '#FF6B2C',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
 };
 
@@ -75,3 +112,12 @@ export const Fonts = Platform.select({
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });
+
+/** Plus Jakarta Sans family names (loaded in App.tsx). Use instead of fontWeight. */
+export const Font = {
+  regular: 'PlusJakartaSans_400Regular',
+  medium: 'PlusJakartaSans_500Medium',
+  semibold: 'PlusJakartaSans_600SemiBold',
+  bold: 'PlusJakartaSans_700Bold',
+  extrabold: 'PlusJakartaSans_800ExtraBold',
+};

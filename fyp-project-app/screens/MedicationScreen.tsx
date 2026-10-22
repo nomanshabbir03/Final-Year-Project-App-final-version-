@@ -16,7 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { api, parseJsonData, toApiErrorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type MedicationScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -386,8 +386,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
@@ -399,11 +400,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
     gap: 8,
+    ...Shadows.card,
   },
   summaryTitle: {
     fontSize: 16,
@@ -427,13 +429,14 @@ const styles = StyleSheet.create({
   },
   addMedicationButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 16,
     marginTop: 8,
     marginBottom: 16,
+    ...Shadows.button,
   },
   addMedicationButtonText: {
     color: Colors.white,
@@ -446,22 +449,19 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
     marginBottom: 12,
+    letterSpacing: -0.3,
   },
   medicationCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 16,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 16,
     marginBottom: 12,
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    ...Shadows.card,
   },
   medicationHeader: {
     flexDirection: 'row',
@@ -563,9 +563,10 @@ const styles = StyleSheet.create({
   },
   addFirstButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     paddingVertical: 14,
     paddingHorizontal: 24,
+    ...Shadows.button,
   },
   addFirstButtonText: {
     color: Colors.white,
@@ -593,7 +594,7 @@ const styles = StyleSheet.create({
   },
   sosText: {
     color: '#ffffff',
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 12,
     marginTop: 2,
   },
@@ -651,9 +652,10 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 24,
     paddingVertical: 12,
+    ...Shadows.button,
   },
   retryButtonText: {
     color: Colors.white,

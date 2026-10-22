@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppContext } from '../context/AppContext';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type TasksScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -267,8 +267,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
@@ -280,11 +281,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
     gap: 8,
+    ...Shadows.card,
   },
   summaryTitle: {
     fontSize: 16,
@@ -308,13 +310,14 @@ const styles = StyleSheet.create({
   },
   addTaskButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 16,
     marginTop: 8,
     marginBottom: 16,
+    ...Shadows.button,
   },
   addTaskButtonText: {
     color: Colors.white,
@@ -327,23 +330,20 @@ const styles = StyleSheet.create({
   },
   previewTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
     marginBottom: 12,
+    letterSpacing: -0.3,
   },
   previewCard: {
     backgroundColor: Colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.borderSoft,
     padding: 12,
     marginBottom: 10,
     gap: 6,
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    ...Shadows.card,
   },
   previewTaskName: {
     fontSize: 16,
@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
   },
   selectedTaskModalContent: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
+    borderRadius: Radius.xl,
     padding: 24,
     width: '80%',
     maxWidth: 300,
@@ -403,10 +403,11 @@ const styles = StyleSheet.create({
   },
   selectedTaskTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimary,
     marginBottom: 16,
     textAlign: 'center',
+    letterSpacing: -0.3,
   },
   selectedTaskMeta: {
     fontSize: 14,
@@ -421,9 +422,10 @@ const styles = StyleSheet.create({
   },
   selectedTaskEditButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 16,
     paddingVertical: 8,
+    ...Shadows.button,
   },
   selectedTaskEditButtonText: {
     color: Colors.white,
@@ -443,10 +445,11 @@ const styles = StyleSheet.create({
   },
   selectedTaskCloseButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 20,
     paddingVertical: 10,
     marginTop: 16,
+    ...Shadows.button,
   },
   selectedTaskCloseButtonText: {
     color: Colors.white,
@@ -471,9 +474,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     alignSelf: 'center',
     marginTop: 12,
+    ...Shadows.button,
   },
   retryText: {
     color: Colors.white,

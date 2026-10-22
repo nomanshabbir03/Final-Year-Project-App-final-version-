@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { Magnetometer } from 'expo-sensors';
-import { Colors } from '../constants/theme';
+import { Colors, Radius, Shadows } from '../constants/theme';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -186,11 +186,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
+    fontWeight: '800',
+    color: Colors.textPrimary,
     textAlign: 'center',
     marginTop: 16,
     marginBottom: 8,
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
@@ -313,16 +314,14 @@ const styles = StyleSheet.create({
   },
   angleCard: {
     backgroundColor: Colors.white,
-    borderRadius: 14,
+    borderRadius: Radius.lg,
     padding: 20,
     alignItems: 'center',
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
     width: '100%',
     maxWidth: 320,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
+    ...Shadows.card,
   },
   angleText: {
     fontSize: 18,

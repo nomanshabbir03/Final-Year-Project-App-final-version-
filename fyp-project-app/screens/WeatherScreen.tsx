@@ -5,7 +5,7 @@ import { ImageBackground } from 'expo-image';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 
-import { Colors } from '../constants/theme';
+import { Colors, Radius } from '../constants/theme';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -918,7 +918,7 @@ const styles = StyleSheet.create({
   },
   weatherCard: { 
     flex: 1, 
-    backgroundColor: 'rgba(29,158,117,0.15)', 
+    backgroundColor: 'rgba(255,107,44,0.15)', 
     borderRadius: 12, 
     padding: 12, 
     alignItems: 'center', 
@@ -973,7 +973,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   hourCard: {
-    backgroundColor: 'rgba(29,158,117,0.15)',
+    backgroundColor: 'rgba(255,107,44,0.15)',
     borderRadius: 12,
     padding: 12,
     alignItems: 'center',
@@ -1042,7 +1042,7 @@ const styles = StyleSheet.create({
   },
   bottomCard: {
     flex: 1,
-    backgroundColor: 'rgba(29,158,117,0.15)',
+    backgroundColor: 'rgba(255,107,44,0.15)',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -1100,8 +1100,9 @@ const styles = StyleSheet.create({
   },
   pickerTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.textPrimaryDark,
+    letterSpacing: -0.3,
   },
   closeText: {
     fontSize: 16,
@@ -1115,13 +1116,13 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     height: 48,
-    backgroundColor: 'rgba(29,158,117,0.15)',
-    borderRadius: 12,
+    backgroundColor: Colors.bgLight,
+    borderRadius: Radius.md,
     paddingHorizontal: 16,
     color: Colors.textPrimaryDark,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: Colors.primary + '40',
+    borderColor: Colors.borderLight,
   },
   button: {
     backgroundColor: '#007AFF',
