@@ -8,6 +8,7 @@ from accounts.models import UserProfile
 
 from .models import Habit, HabitCompletion
 from .serializers import HabitSerializer
+from .services import complete_habit
 
 
 def _get_request_user_id(request):
@@ -57,42 +58,7 @@ class HabitViewSet(
 
 	@action(detail=True, methods=['patch'], url_path='complete')
 	def complete(self, request, pk=None):
-		habit = self.get_object()
-		today = timezone.localdate()
-
-		if habit.last_completed_date == today:
-			# Already completed today, do nothing
-			serializer = self.get_serializer(habit)
-			return Response(serializer.data, status=status.HTTP_200_OK)
-
-		if habit.last_completed_date is None:
-			# First time completing this habit
-			habit.streak_count = 1
-		else:
-			day_delta = (today - habit.last_completed_date).days
-
-			if habit.frequency == Habit.FREQUENCY_DAILY:
-				# Daily habits: increment if completed yesterday, reset otherwise
-				if day_delta == 1:
-					habit.streak_count = habit.streak_count + 1
-				else:
-					habit.streak_count = 1
-			else:
-				# Weekly habits: increment if completed within last 7 days, reset otherwise
-				if 1 <= day_delta <= 7:
-					habit.streak_count = habit.streak_count + 1
-				else:
-					habit.streak_count = 1
-
-		if habit.streak_count > habit.best_streak:
-			habit.best_streak = habit.streak_count
-
-		habit.last_completed_date = today
-		habit.save(update_fields=['streak_count', 'best_streak', 'last_completed_date'])
-
-		# Create HabitCompletion entry if it doesn't already exist
-		HabitCompletion.objects.get_or_create(habit=habit, completed_date=today)
-
+		habit = complete_habit(self.get_object(), timezone.localdate())
 		serializer = self.get_serializer(habit)
 		return Response(serializer.data, status=status.HTTP_200_OK)
 

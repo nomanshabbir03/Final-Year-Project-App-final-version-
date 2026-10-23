@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'medications',
     'budget',
     'fitness',
+    'assistant',
 ]
 
 MIDDLEWARE = [
@@ -170,6 +171,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],
+    'DEFAULT_THROTTLE_RATES': {
+        'assistant': '30/min',
+        'assistant_voice': '20/min',
+    },
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
     ]
@@ -191,3 +196,30 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
+
+# AI assistant: the chatbot calls Gemini (then Groq) with tools that act on the signed-in user's data.
+def _api_keys(prefix):
+    """Every key set as PREFIX, PREFIX_2, PREFIX_BACKUP ... (each value may also be comma-separated).
+    They are tried in name order; when one hits its limit the next is used."""
+    names = sorted((n for n in os.environ if n == prefix or n.startswith(prefix + '_')),
+                   key=lambda n: (n != prefix, n))
+    keys = []
+    for name in names:
+        for key in os.environ[name].split(','):
+            key = key.strip().strip('"').strip("'")
+            if key and key not in keys:
+                keys.append(key)
+    return keys
+
+
+GEMINI_API_KEYS = _api_keys('GEMINI_API_KEY')
+GROQ_API_KEYS = _api_keys('GROQ_API_KEY')
+# Comma-separated, tried in order: free-tier quotas are per model, so later ones are fallbacks.
+ASSISTANT_MODELS = [m.strip() for m in (
+    config('GEMINI_MODEL', default='') or 'gemini-3.5-flash,gemini-3.1-flash-lite,gemini-3-flash-preview'
+).split(',') if m.strip()]
+ASSISTANT_TTS_MODEL = config('GEMINI_TTS_MODEL', default='') or 'gemini-3.8-flash-tts'
+GROQ_MODELS = [m.strip() for m in (
+    config('GROQ_MODEL', default='') or 'openai/gpt-oss-120b,openai/gpt-oss-20b'
+).split(',') if m.strip()]
+GROQ_STT_MODEL = config('GROQ_STT_MODEL', default='') or 'whisper-large-v3'

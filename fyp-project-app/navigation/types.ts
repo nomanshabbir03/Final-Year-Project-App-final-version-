@@ -35,6 +35,7 @@ export type RootStackParamList = {
   LogFitness: undefined;
   FitnessGoals: undefined;
   FitnessProfile: undefined;
+  Assistant: undefined;
 };
 
 export type MainTabParamList = {

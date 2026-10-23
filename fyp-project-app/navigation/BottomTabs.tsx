@@ -2,11 +2,13 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { Colors } from '../constants/theme';
 
-import type { MainTabParamList } from './types';
+import type { MainTabParamList, RootStackParamList } from './types';
 import { HomeScreen } from '../screens/HomeScreen';
 import { TasksScreen } from '../screens/TasksScreen';
 import { HabitsScreen } from '../screens/HabitsScreen';
@@ -33,8 +35,10 @@ const tabIconActiveMap: Record<keyof MainTabParamList, keyof typeof Ionicons.gly
 
 export function BottomTabs() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   
   return (
+    <View style={{ flex: 1 }}>
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: true,
@@ -94,5 +98,27 @@ export function BottomTabs() {
       <Tab.Screen name="Weather" component={WeatherScreen} options={{ headerShown: false }} />
       <Tab.Screen name="More" component={MoreScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
+    <Pressable
+      accessibilityLabel="Open assistant"
+      onPress={() => navigation.navigate('Assistant')}
+      style={{
+        position: 'absolute',
+        right: 16,
+        bottom: 66 + (insets.bottom > 0 ? insets.bottom : 10) + 16,
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+        backgroundColor: Colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#0F172A',
+        shadowOpacity: 0.2,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 6,
+      }}>
+      <Ionicons name="sparkles" size={24} color={Colors.white} />
+    </Pressable>
+    </View>
   );
 }
