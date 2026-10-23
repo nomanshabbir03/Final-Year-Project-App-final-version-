@@ -165,7 +165,7 @@ CORS_ALLOWED_ORIGINS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'accounts.supabase_auth.SupabaseJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
@@ -174,6 +174,11 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
     ]
 }
+
+# Supabase Auth: the app signs users in with Supabase and sends the access token (JWT) here.
+SUPABASE_URL = config('SUPABASE_URL', default='').rstrip('/')
+# Only needed if the project still uses the legacy HS256 JWT secret (not asymmetric signing keys).
+SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
 
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='')
 if not EMAIL_BACKEND:

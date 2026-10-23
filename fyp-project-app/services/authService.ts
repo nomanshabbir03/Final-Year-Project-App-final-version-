@@ -1,7 +1,7 @@
 import { api, parseJsonData } from './api';
+import { supabase } from './supabase';
 
 export type AuthPayload = {
-  token: string;
   email: string;
   user_id: string;
   full_name: string;
@@ -21,30 +21,9 @@ type UpdateProfileInput = Partial<ProfilePayload> & {
   avatar_image_uri?: string;
 };
 
-export async function signup(email: string, password: string, full_name?: string): Promise<AuthPayload> {
-  const body: any = { email, password };
-  if (typeof full_name === 'string' && full_name.trim()) {
-    body.full_name = full_name.trim();
-  }
-  const response = await api.post('/auth/signup/', body);
-  return parseJsonData<AuthPayload>(response.data);
-}
-
-export async function login(email: string, password: string): Promise<AuthPayload> {
-  const response = await api.post('/auth/login/', {
-    email,
-    password,
-  });
-  return parseJsonData<AuthPayload>(response.data);
-}
-
 export async function me(): Promise<AuthPayload> {
   const response = await api.get('/auth/me/');
   return parseJsonData<AuthPayload>(response.data);
-}
-
-export async function logout(): Promise<void> {
-  await api.post('/auth/logout/');
 }
 
 export async function getProfile(): Promise<ProfilePayload> {
@@ -91,15 +70,25 @@ export async function updateProfile(input: UpdateProfileInput): Promise<ProfileP
 }
 
 export async function requestPasswordReset(email: string): Promise<{ detail?: string }> {
-  const response = await api.post('/auth/password/forgot/', { email });
-  return parseJsonData<{ detail?: string }>(response.data);
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return { detail: 'If the account exists, a reset code was sent to your email.' };
 }
 
 export async function resetPassword(email: string, code: string, newPassword: string): Promise<{ detail?: string }> {
-  const response = await api.post('/auth/password/reset/', {
-    email,
-    code,
-    new_password: newPassword,
-  });
-  return parseJsonData<{ detail?: string }>(response.data);
+  const verified = await supabase.auth.verifyOtp({ email, token: code, type: 'recovery' });
+  if (verified.error) {
+    throw new Error(verified.error.message);
+  }
+
+  const updated = await supabase.auth.updateUser({ password: newPassword });
+  if (updated.error) {
+    throw new Error(updated.error.message);
+  }
+
+  // The recovery code signs the user in; make them log in explicitly with the new password.
+  await supabase.auth.signOut();
+  return { detail: 'Password updated. You can now sign in with the new password.' };
 }

@@ -5,6 +5,7 @@ import type { NavigationProp } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { Colors, Font } from '../constants/theme';
+import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
 
 const MODULES: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -17,6 +18,7 @@ const MODULES: { key: string; label: string; icon: keyof typeof Ionicons.glyphMa
 
 export function SplashScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const { isAuthenticated } = useAuth();
 
   const logoScale = useRef(new Animated.Value(0.4)).current;
   const logoFade = useRef(new Animated.Value(0)).current;
@@ -46,10 +48,11 @@ export function SplashScreen() {
     ]).start();
 
     const timer = setTimeout(() => {
-      navigation.reset({ index: 0, routes: [{ name: 'Onboarding' }] });
+      // A restored Supabase session skips onboarding and login.
+      navigation.reset({ index: 0, routes: [{ name: isAuthenticated ? 'MainTabs' : 'Onboarding' }] });
     }, 3200);
     return () => clearTimeout(timer);
-  }, [navigation, ring, logoFade, logoScale, textFade, textRise, chips]);
+  }, [navigation, isAuthenticated, ring, logoFade, logoScale, textFade, textRise, chips]);
 
   const ringStyle = {
     opacity: ring.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),

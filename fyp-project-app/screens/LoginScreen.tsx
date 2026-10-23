@@ -38,7 +38,9 @@ export function LoginScreen() {
     setLoading(true);
     try {
       const result = await login(email, password);
-      if (!result.ok) {
+      if (result.needsVerification) {
+        navigation.navigate('ConfirmCode', { email: email.trim().toLowerCase() });
+      } else if (!result.ok) {
         Alert.alert('Login Failed', result.error ?? 'Unable to login.');
       } else {
         console.log('Login function called, navigating...');
@@ -231,6 +233,7 @@ export function LoginScreen() {
                     style={styles.textInput}
                     value={resetCode}
                     onChangeText={setResetCode}
+                    keyboardType="number-pad"
                     placeholder="123456"
                     placeholderTextColor={Colors.textHint}
                     textAlign="left"

@@ -50,7 +50,7 @@ let requestUserId: string | null = process.env.EXPO_PUBLIC_USER_ID?.trim() || nu
 export function setApiAuthToken(token: string | null) {
   authToken = token;
   if (token) {
-    api.defaults.headers.common['Authorization'] = `Token ${token}`;
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   } else {
     delete api.defaults.headers.common['Authorization'];
   }
@@ -63,7 +63,7 @@ export function setApiRequestUserId(userId: string | null) {
 api.interceptors.request.use((config) => {
   if (authToken) {
     config.headers = config.headers ?? {};
-    config.headers.Authorization = `Token ${authToken}`;
+    config.headers.Authorization = `Bearer ${authToken}`;
   }
 
   if (requestUserId) {
