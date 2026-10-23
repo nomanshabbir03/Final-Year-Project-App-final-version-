@@ -38,6 +38,7 @@ import { FitnessScreen } from '../screens/FitnessScreen';
 import { LogFitnessScreen } from '../screens/LogFitnessScreen';
 import { FitnessGoalsScreen } from '../screens/FitnessGoalsScreen';
 import { FitnessProfileScreen } from '../screens/FitnessProfileScreen';
+import { AssistantScreen } from '../screens/AssistantScreen';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 
@@ -130,6 +131,7 @@ export function AppNavigator() {
         <Stack.Screen name="LogFitness" component={LogFitnessScreen} options={{ headerShown: false }} />
         <Stack.Screen name="FitnessGoals" component={FitnessGoalsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="FitnessProfile" component={FitnessProfileScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Assistant" component={AssistantScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

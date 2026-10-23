@@ -33,6 +33,7 @@ def api_root(_request):
                 '/medications/',
                 '/api/budget/',
                 '/api/fitness/',
+                '/api/assistant/',
             ],
         }
     )
@@ -47,6 +48,7 @@ urlpatterns = [
     path('', include('medications.urls')),
     path('api/budget/', include('budget.urls')),
     path('api/fitness/', include('fitness.urls')),
+    path('api/assistant/', include('assistant.urls')),
 ]
 
 if settings.DEBUG:
