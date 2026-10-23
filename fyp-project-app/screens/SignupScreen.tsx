@@ -34,6 +34,12 @@ export function SignupScreen() {
         setError(result.error ?? 'Unable to create account.');
         return;
       }
+
+      if (result.needsVerification) {
+        navigation.navigate('ConfirmCode', { email: email.trim().toLowerCase() });
+      } else {
+        navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+      }
     } finally {
       setLoading(false);
     }

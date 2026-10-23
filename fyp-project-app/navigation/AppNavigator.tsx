@@ -34,6 +34,10 @@ import { TransactionsScreen } from '../screens/TransactionsScreen';
 import { SubscriptionsScreen } from '../screens/SubscriptionsScreen';
 import { AddTransactionScreen } from '../screens/AddTransactionScreen';
 import { BudgetSettingsScreen } from '../screens/BudgetSettingsScreen';
+import { FitnessScreen } from '../screens/FitnessScreen';
+import { LogFitnessScreen } from '../screens/LogFitnessScreen';
+import { FitnessGoalsScreen } from '../screens/FitnessGoalsScreen';
+import { FitnessProfileScreen } from '../screens/FitnessProfileScreen';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 
@@ -122,6 +126,10 @@ export function AppNavigator() {
         <Stack.Screen name="Transactions" component={TransactionsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="AddTransaction" component={AddTransactionScreen} options={{ headerShown: false }} />
         <Stack.Screen name="BudgetSettings" component={BudgetSettingsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Fitness" component={FitnessScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="LogFitness" component={LogFitnessScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="FitnessGoals" component={FitnessGoalsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="FitnessProfile" component={FitnessProfileScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

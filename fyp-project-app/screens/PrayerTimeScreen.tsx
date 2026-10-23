@@ -18,7 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
+import { Notifications } from '../services/notifications';
 import * as Device from 'expo-device';
 import { createAudioPlayer, type AudioPlayer, type AudioStatus } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -83,8 +83,8 @@ export function PrayerTimeScreen() {
   const [adhanEnabled, setAdhanEnabled] = useState(false);
   const [isPlayingAdhan, setIsPlayingAdhan] = useState(false);
   const soundRef = useRef<AudioPlayer | null>(null);
-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const prayerCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prayerCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [cityInput, setCityInput] = useState('');
 

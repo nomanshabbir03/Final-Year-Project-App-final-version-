@@ -31,6 +31,10 @@ export type RootStackParamList = {
   Subscriptions: undefined;
   AddTransaction: { transaction?: TransactionDto } | undefined;
   BudgetSettings: undefined;
+  Fitness: undefined;
+  LogFitness: undefined;
+  FitnessGoals: undefined;
+  FitnessProfile: undefined;
 };
 
 export type MainTabParamList = {

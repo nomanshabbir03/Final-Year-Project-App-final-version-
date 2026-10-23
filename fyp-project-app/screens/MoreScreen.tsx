@@ -42,6 +42,15 @@ export function MoreScreen() {
       screen: 'Budget' as keyof RootStackParamList,
     },
     {
+      id: 'fitness',
+      icon: 'pulse' as keyof typeof Ionicons.glyphMap,
+      tint: Colors.tintSky,
+      color: Colors.accentTeal,
+      title: 'Fitness',
+      description: 'Log steps, calories, sleep & goals',
+      screen: 'Fitness' as keyof RootStackParamList,
+    },
+    {
       id: 'profile',
       icon: 'person' as keyof typeof Ionicons.glyphMap,
       tint: Colors.tintAmber,
@@ -59,6 +68,8 @@ export function MoreScreen() {
       navigation.navigate('Medication');
     } else if (screen === 'Budget') {
       navigation.navigate('Budget');
+    } else if (screen === 'Fitness') {
+      navigation.navigate('Fitness');
     } else if (screen === 'Profile') {
       navigation.navigate('Profile');
     }

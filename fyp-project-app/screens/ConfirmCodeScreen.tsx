@@ -11,20 +11,7 @@ import type { RootStackParamList } from '../navigation/types';
 export function ConfirmCodeScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'ConfirmCode'>>();
-  const { login, signup } = useAuth();
-  
-  // Stub implementations for missing auth functions
-  const verifyCode = async (email: string, code: string) => {
-    // Stub implementation - function not available in AuthContext
-    console.log(`Verifying code ${code} for email ${email}`);
-    return { ok: true, error: undefined };
-  };
-  
-  const resendCode = async (email: string) => {
-    // Stub implementation - function not available in AuthContext
-    console.log(`Resending code to email ${email}`);
-    return { ok: true, error: undefined };
-  };
+  const { verifyEmail, resendVerification } = useAuth();
   const email = route.params?.email ?? '';
 
   const [code, setCode] = useState('');
@@ -52,15 +39,19 @@ export function ConfirmCodeScreen() {
       Alert.alert('Error', 'Email is required.');
       return;
     }
+    if (code.trim().length < 6) {
+      Alert.alert('Error', 'Enter the code from your email.');
+      return;
+    }
     setLoading(true);
     try {
-      const result = await verifyCode(email, code);
+      const result = await verifyEmail(email, code);
       if (!result.ok) {
         Alert.alert('Error', result.error ?? 'Invalid confirmation code.');
         return;
       }
-      Alert.alert('Success', 'Email confirmed — you can now sign in.');
-      navigation.navigate('Login');
+      // Verifying the code signs the user in.
+      navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
     } finally {
       setLoading(false);
     }
@@ -74,7 +65,7 @@ export function ConfirmCodeScreen() {
 
     setLoading(true);
     try {
-      const result = await resendCode(email);
+      const result = await resendVerification(email);
       if (!result.ok) {
         Alert.alert('Error', result.error ?? 'Could not resend code.');
         return;
@@ -87,33 +78,42 @@ export function ConfirmCodeScreen() {
   };
 
   return (
-    <ScreenContainer title="Confirm your email" subtitle="Enter the code we sent to your email">
+    <ScreenContainer title="Confirm your email" subtitle="We sent you a confirmation email">
       <View style={styles.group}>
         <Text style={styles.label}>Email</Text>
         <Text style={styles.emailText}>{email}</Text>
       </View>
 
+      <Text style={styles.hintText}>
+        Open the email and tap the confirmation link, then come back and sign in. If your email
+        contains a code instead, enter it below.
+      </Text>
+
+      <Pressable style={styles.primaryButton} onPress={() => navigation.navigate('Login')}>
+        <Text style={styles.primaryButtonText}>I've confirmed, sign in</Text>
+      </Pressable>
+
       <View style={styles.group}>
-        <Text style={styles.label}>Confirmation code</Text>
+        <Text style={styles.label}>Confirmation code (optional)</Text>
         <TextInput
           value={code}
           onChangeText={setCode}
           placeholder="123456"
           style={styles.input}
-          keyboardType="numeric"
-          maxLength={6}
+          keyboardType="number-pad"
+          maxLength={10}
         />
       </View>
 
-      <Pressable style={styles.primaryButton} onPress={handleVerify} disabled={loading}>
-        <Text style={styles.primaryButtonText}>{loading ? 'Verifying...' : 'Verify'}</Text>
+      <Pressable style={styles.secondaryButton} onPress={handleVerify} disabled={loading}>
+        <Text style={styles.secondaryButtonText}>{loading ? 'Verifying...' : 'Verify code'}</Text>
       </Pressable>
 
       <Pressable style={styles.secondaryButton} onPress={handleResend} disabled={loading}>
-        <Text style={styles.secondaryButtonText}>Resend code</Text>
+        <Text style={styles.secondaryButtonText}>Resend email</Text>
       </Pressable>
 
-      <Text style={styles.expiryText}>Code expires in {expiryLabel}</Text>
+      <Text style={styles.expiryText}>Links and codes expire after a while ({expiryLabel})</Text>
     </ScreenContainer>
   );
 }
@@ -126,6 +126,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     fontWeight: '600',
+  },
+  hintText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
   },
   emailText: {
     fontSize: 15,

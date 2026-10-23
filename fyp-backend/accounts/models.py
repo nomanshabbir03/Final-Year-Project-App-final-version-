@@ -16,6 +16,7 @@ class UserProfile(models.Model):
     avatar_image = models.ImageField(upload_to='avatars/', blank=True, null=True)
     bio = models.CharField(max_length=280, blank=True)
     selected_city = models.CharField(max_length=120, blank=True)
+    supabase_user_id = models.UUIDField(null=True, blank=True, unique=True)
     email_confirmed = models.BooleanField(default=False)
     social_provider = models.CharField(max_length=20, blank=True)
     social_subject = models.CharField(max_length=255, blank=True, db_index=True)

@@ -1,4 +1,4 @@
-import * as Notifications from 'expo-notifications';
+import { Notifications } from './notifications';
 import { formatMoney } from '../utils/budgetFormat';
 import { upcomingDueDates } from '../utils/subscriptions';
 import type { SubscriptionDto } from './budgetService';

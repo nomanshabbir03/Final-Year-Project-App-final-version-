@@ -18,7 +18,7 @@ import type { RootStackParamList, MainTabParamList } from '../navigation/types';
 import { CompositeNavigationProp } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
+import { Notifications } from '../services/notifications';
 
 import { Colors, Radius, Shadows } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
