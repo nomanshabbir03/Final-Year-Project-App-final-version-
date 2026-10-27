@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+﻿import React, { useEffect } from 'react';
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View } from 'react-native';
@@ -59,7 +59,7 @@ const appTheme = {
 };
 
 export function AppNavigator() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const { preloadDashboardData } = useAppContext();
 
   useEffect(() => {
@@ -67,8 +67,6 @@ export function AppNavigator() {
       preloadDashboardData();
     }
   }, [isAuthenticated, preloadDashboardData]);
-
-  console.log('Navigator rendering, isAuthenticated:', isAuthenticated, 'user:', user);
 
   if (isLoading) {
     return (
@@ -80,7 +78,8 @@ export function AppNavigator() {
 
   return (
     <NavigationContainer theme={appTheme}>
-      <Stack.Navigator initialRouteName="Splash">
+      {/* Already signed in (restored session): open the app directly. Otherwise start with the splash. */}
+      <Stack.Navigator initialRouteName={isAuthenticated ? 'MainTabs' : 'Splash'}>
         <Stack.Screen 
           name="Splash" 
           component={SplashScreen} 

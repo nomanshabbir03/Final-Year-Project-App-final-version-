@@ -117,7 +117,7 @@ export function BottomTabs() {
         shadowOffset: { width: 0, height: 4 },
         elevation: 6,
       }}>
-      <Ionicons name="sparkles" size={24} color={Colors.white} />
+      <Ionicons name="happy" size={28} color={Colors.white} />
     </Pressable>
     </View>
   );

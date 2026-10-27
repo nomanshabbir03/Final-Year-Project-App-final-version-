@@ -265,7 +265,7 @@ export function AssistantScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <View style={styles.emptyIcon}>
-                <Ionicons name="sparkles" size={28} color={Colors.primary} />
+                <Ionicons name="happy" size={30} color={Colors.primary} />
               </View>
               <Text style={styles.emptyTitle}>Ask me anything about your day</Text>
               <Text style={styles.emptyText}>

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, RefreshControl } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, RefreshControl, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, MainTabParamList } from '../navigation/types';
@@ -14,6 +14,8 @@ import { Colors, Font, Radius, Shadows } from '../constants/theme';
 import { fetchWeatherByCity } from '../services/weatherService';
 import { api, parseJsonData } from '../services/api';
 import { DashboardBudgetCard } from '../components/DashboardBudgetCard';
+import { getToday as getFitnessToday } from '../services/fitnessService';
+import { getPrayerTimes, loadSavedPlace, type PrayerPlace } from '../services/prayerService';
 
 interface PrayerTimes {
   Fajr: string;
@@ -22,6 +24,34 @@ interface PrayerTimes {
   Maghrib: string;
   Isha: string;
 }
+
+// Last-resort location: "Asia/Karachi" -> Karachi, so prayer times work before a place is chosen.
+function cityFromTimezone(timezone?: string): PrayerPlace | null {
+  const city = timezone?.split('/').pop()?.replace(/_/g, ' ').trim();
+  return city ? { city, label: city } : null;
+}
+
+const SECTION_GAP = 16;        // gap between sections (contentContainer gap)
+const GRID_GAP = 12;           // gap between the two rows of tiles (statGrid rowGap)
+const FOLD_MARGIN = 4;        // keeps the tiles just inside the screen, so Budget starts just outside it
+const MIN_THOUGHT_HEIGHT = 44;
+const FULL_THOUGHT_HEIGHT = 200;   // room for the longest verse (2-line Arabic + 3-line translation)
+
+const DAILY_THOUGHTS = [
+  { arabic: 'رَبِّ زِدْنِي عِلْمًا', translation: 'My Lord, increase me in knowledge.', ref: 'Quran 20:114' },
+  { arabic: 'إِنَّ مَعَ الْعُسْرِ يُسْرًا', translation: 'Indeed, with hardship comes ease.', ref: 'Quran 94:6' },
+  { arabic: 'حَسْبُنَا اللَّهُ وَنِعْمَ الْوَكِيلُ', translation: 'Allah is sufficient for us, and He is the best disposer of affairs.', ref: 'Quran 3:173' },
+  { arabic: 'فَاذْكُرُونِي أَذْكُرْكُمْ', translation: 'So remember Me; I will remember you.', ref: 'Quran 2:152' },
+  { arabic: 'وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ', translation: 'Whoever relies upon Allah, He is sufficient for him.', ref: 'Quran 65:3' },
+];
+
+const PLACEHOLDER_PRAYERS: PrayerTimes = {
+  Fajr: '--:--',
+  Dhuhr: '--:--',
+  Asr: '--:--',
+  Maghrib: '--:--',
+  Isha: '--:--',
+};
 
 interface DateInfo {
   hijri: {
@@ -65,6 +95,11 @@ export function HomeScreen() {
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
   const [hijriDate, setHijriDate] = useState<DateInfo | null>(null);
   const [medications, setMedications] = useState<Medication[]>([]);
+  const [stepsToday, setStepsToday] = useState<number | null>(null);
+  // Visible scroll height and the height of greeting + next-up card + tiles (see the top element below).
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [headHeight, setHeadHeight] = useState(0); // greeting + next-up card
+  const { width: windowWidth } = useWindowDimensions();
   const [nextEvent, setNextEvent] = useState<NextEvent | null>(null);
   
   const today = new Date().toISOString().split('T')[0];
@@ -83,11 +118,16 @@ export function HomeScreen() {
   // Fetch prayer times and hijri date
   useEffect(() => {
     fetchPrayerData();
-  }, [user?.selectedCity]);
+  }, [user?.selectedCity, user?.timezone]);
   
   // Fetch medications
   useEffect(() => {
     fetchMedications();
+  }, []);
+
+  // Fetch today's steps for the Fitness tile
+  useEffect(() => {
+    fetchSteps();
   }, []);
   
   // Calculate next event whenever relevant data changes
@@ -136,28 +176,43 @@ export function HomeScreen() {
   // Helper functions
   const fetchPrayerData = async () => {
     try {
-      // This would normally fetch from prayer API, using mock data for now
-      // In a real implementation, you'd call the same prayer API as PrayerTimeScreen
-      const mockPrayerTimes: PrayerTimes = {
-        Fajr: '05:30',
-        Dhuhr: '12:30', 
-        Asr: '15:45',
-        Maghrib: '18:15',
-        Isha: '19:30'
-      };
-      const mockHijriDate: DateInfo = {
-        hijri: {
-          day: '10',
-          month: { en: 'Ramadan' }
-        }
-      };
-      setPrayerTimes(mockPrayerTimes);
-      setHijriDate(mockHijriDate);
+      // Same place the Prayer screen uses: last chosen place, else the city in the profile.
+      const place: PrayerPlace | null =
+        (await loadSavedPlace()) ??
+        (user?.selectedCity ? { city: user.selectedCity, label: user.selectedCity } : null) ??
+        cityFromTimezone(user?.timezone);
+      if (!place) {
+        return;
+      }
+
+      const { data } = await getPrayerTimes(place, 1);
+      const day = data.days[0];
+      if (!day) {
+        return;
+      }
+
+      setPrayerTimes({
+        Fajr: day.times.Fajr,
+        Dhuhr: day.times.Dhuhr,
+        Asr: day.times.Asr,
+        Maghrib: day.times.Maghrib,
+        Isha: day.times.Isha,
+      });
+      setHijriDate({ hijri: { day: String(day.hijri.day), month: { en: day.hijri.month_name } } });
     } catch (error) {
       console.warn('Failed to fetch prayer data', error);
     }
   };
   
+  const fetchSteps = async () => {
+    try {
+      const record = await getFitnessToday();
+      setStepsToday(record.steps);
+    } catch (error) {
+      console.log('Could not load fitness data for home', error);
+    }
+  };
+
   const fetchMedications = async () => {
     try {
       const response = await api.get('/medications/');
@@ -345,7 +400,8 @@ export function HomeScreen() {
     setBudgetReloadKey((k) => k + 1);
     await Promise.all([
       fetchPrayerData(),
-      fetchMedications()
+      fetchMedications(),
+      fetchSteps()
     ]);
     setRefreshing(false);
   }, []);
@@ -388,10 +444,6 @@ export function HomeScreen() {
     .map((part) => part[0]?.toUpperCase())
     .join('') || '?';
 
-  const nextPrayer = prayerTimes
-    ? Object.entries(prayerTimes).find(([name, time]) => !getPrayerStatus(name, time).isPast)
-    : undefined;
-
   const statTiles: {
     key: string;
     label: string;
@@ -420,13 +472,13 @@ export function HomeScreen() {
       onPress: () => navigation.navigate('Habits'),
     },
     {
-      key: 'prayer',
-      label: 'Next Prayer',
-      value: nextPrayer ? `${nextPrayer[0]} ${nextPrayer[1]}` : 'Done today',
-      icon: 'moon',
-      tint: Colors.tintSky,
-      solid: Colors.accentTeal,
-      onPress: () => navigation.navigate('PrayerTime'),
+      key: 'fitness',
+      label: 'Fitness',
+      value: stepsToday === null ? 'Open' : `${stepsToday.toLocaleString()} steps`,
+      icon: 'fitness',
+      tint: Colors.tintRose,
+      solid: Colors.accentRose,
+      onPress: () => navigation.navigate('Fitness'),
     },
     {
       key: 'medication',
@@ -439,14 +491,70 @@ export function HomeScreen() {
     },
   ];
 
+  // Vertical budget of the first screen: the verse card above the greeting takes whatever is left after the
+  // greeting, the next-up card and the four tiles, so the tiles stay fully visible and the Budget card starts
+  // just below the bottom edge (no sliver of it, no blank gap). If the next-up card grows (weather, medication
+  // lines) and the verse would lose its room, the tiles give back a little height (at most 20%) instead.
+  const topPadding = insets.top + 16;
+  const tileWidth = (windowWidth - 32) * 0.485;
+  const squareGridHeight = tileWidth * 2 + GRID_GAP;
+  const spare =
+    viewportHeight > 0 && headHeight > 0
+      ? viewportHeight - topPadding - headHeight - SECTION_GAP * 2 - FOLD_MARGIN - squareGridHeight
+      : 0;
+  const maxTileShrink = tileWidth * 2 * 0.2;
+  let topHeight = 0;
+  let tileHeight = tileWidth;
+  if (spare >= MIN_THOUGHT_HEIGHT) {
+    topHeight = Math.floor(spare);
+  } else if (spare + maxTileShrink >= MIN_THOUGHT_HEIGHT) {
+    const shrink = MIN_THOUGHT_HEIGHT - spare;
+    topHeight = MIN_THOUGHT_HEIGHT;
+    tileHeight = tileWidth - shrink / 2;
+  } else if (spare !== 0) {
+    // Not even a strip fits: no verse, but still keep the four tiles fully on screen (small phones).
+    const overflow = Math.max(0, -(spare + SECTION_GAP));
+    tileHeight = tileWidth - Math.min(overflow, maxTileShrink) / 2;
+  }
+  const showThought = topHeight >= MIN_THOUGHT_HEIGHT;
+  const fullThought = topHeight >= FULL_THOUGHT_HEIGHT;
+  const dayOfYear = Math.floor((currentTime.getTime() - new Date(currentTime.getFullYear(), 0, 0).getTime()) / 86400000);
+  const thought = DAILY_THOUGHTS[dayOfYear % DAILY_THOUGHTS.length];
+
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top + 16 }]}
+      onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
+      contentContainerStyle={[styles.contentContainer, { paddingTop: topPadding }]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
       }
     >
+      {/* Thought for today (fills the space left above the greeting) */}
+      {showThought && (
+        <View style={[styles.thoughtCard, { height: topHeight }]}>
+          {fullThought ? (
+            <>
+              <Text style={styles.thoughtEyebrow}>THOUGHT FOR TODAY</Text>
+              <Text style={styles.thoughtArabic} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}>
+                {thought.arabic}
+              </Text>
+              <Text style={styles.thoughtTranslation} numberOfLines={3} adjustsFontSizeToFit minimumFontScale={0.8}>
+                {thought.translation}
+              </Text>
+              <Text style={styles.thoughtRef}>{thought.ref}</Text>
+            </>
+          ) : (
+            <Text style={styles.thoughtCompact} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
+              {thought.translation} <Text style={styles.thoughtRef}>· {thought.ref}</Text>
+            </Text>
+          )}
+        </View>
+      )}
+
+      {/* Greeting + next-up card are measured so the verse card above can use the space that is left */}
+      <View style={styles.aboveFold}>
+      <View style={styles.aboveFold} onLayout={(e) => setHeadHeight(e.nativeEvent.layout.height)}>
       {/* Greeting Row */}
       <View style={styles.greetingRow}>
         <View style={styles.greetingText}>
@@ -514,16 +622,18 @@ export function HomeScreen() {
         {weather && <Text style={styles.weatherMood}>{getWeatherMood()}</Text>}
       </Pressable>
 
+      </View>
+
       {/* 2x2 Tinted Summary Grid */}
       <View style={styles.statGrid}>
         {statTiles.map((tile) => (
           <Pressable
             key={tile.key}
-            style={({ pressed }) => [styles.statTile, { backgroundColor: tile.tint }, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.statTile, { backgroundColor: tile.tint, height: tileHeight }, pressed && styles.pressed]}
             onPress={tile.onPress}
           >
             <View style={[styles.statIcon, { backgroundColor: tile.solid }]}>
-              <Ionicons name={tile.icon} size={22} color={Colors.white} />
+              <Ionicons name={tile.icon} size={26} color={Colors.white} />
             </View>
             <View style={styles.statText}>
               <Text style={styles.statLabel}>{tile.label}</Text>
@@ -531,6 +641,8 @@ export function HomeScreen() {
             </View>
           </Pressable>
         ))}
+      </View>
+
       </View>
 
       {/* Budget summary */}
@@ -545,8 +657,10 @@ export function HomeScreen() {
           </Pressable>
         </View>
         <View style={styles.prayerTimeline}>
-          {prayerTimes && Object.entries(prayerTimes).map(([name, time], index) => {
-            const { isPast, isNext } = getPrayerStatus(name, time);
+          {Object.entries(prayerTimes ?? PLACEHOLDER_PRAYERS).map(([name, time], index, all) => {
+            const { isPast, isNext } = prayerTimes
+              ? getPrayerStatus(name, time)
+              : { isPast: false, isNext: false };
             return (
               <View key={name} style={styles.prayerPoint}>
                 <View style={[
@@ -568,7 +682,7 @@ export function HomeScreen() {
                 ]}>
                   {time}
                 </Text>
-                {index < Object.keys(prayerTimes!).length - 1 && (
+                {index < all.length - 1 && (
                   <View style={styles.prayerLine} />
                 )}
               </View>
@@ -703,6 +817,30 @@ export function HomeScreen() {
           </>
         )}
       </View>
+
+      {/* Assistant */}
+      <Pressable
+        style={({ pressed }) => [styles.assistantCard, pressed && styles.pressed]}
+        onPress={() => navigation.navigate('Assistant')}
+      >
+        <View style={styles.assistantTop}>
+          <View style={styles.assistantIcon}>
+            <Ionicons name="happy" size={28} color={Colors.white} />
+          </View>
+          <View style={styles.assistantText}>
+            <Text style={styles.assistantTitle}>Ask your assistant</Text>
+            <Text style={styles.assistantSubtitle}>Type or speak in English, Urdu or Punjabi</Text>
+          </View>
+          <Ionicons name="mic" size={22} color={Colors.primary} />
+        </View>
+        <View style={styles.assistantChips}>
+          {['Add a task', 'Log an expense', 'My medicines'].map((label) => (
+            <View key={label} style={styles.assistantChip}>
+              <Text style={styles.assistantChipText}>{label}</Text>
+            </View>
+          ))}
+        </View>
+      </Pressable>
 
       {/* Sign-off line */}
       <Text style={styles.signOff}>That's the day. Be gentle.</Text>
@@ -893,37 +1031,130 @@ const styles = StyleSheet.create({
   },
 
   // Stat Grid
+  assistantCard: {
+    backgroundColor: Colors.primarySurface,
+    borderRadius: Radius.lg,
+    padding: 18,
+    gap: 14,
+  },
+  assistantTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  assistantIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  assistantText: {
+    flex: 1,
+  },
+  assistantTitle: {
+    fontSize: 17,
+    fontFamily: Font.extrabold,
+    color: Colors.textPrimary,
+  },
+  assistantSubtitle: {
+    fontSize: 13,
+    fontFamily: Font.medium,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  assistantChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  assistantChip: {
+    backgroundColor: Colors.white,
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  assistantChipText: {
+    fontSize: 13,
+    fontFamily: Font.semibold,
+    color: Colors.textPrimary,
+  },
+  aboveFold: {
+    gap: 16,
+  },
+  thoughtCard: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    ...Shadows.card,
+  },
+  thoughtEyebrow: {
+    fontSize: 12,
+    fontFamily: Font.extrabold,
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 1.2,
+  },
+  thoughtArabic: {
+    fontSize: 30,
+    lineHeight: 46,
+    fontWeight: '700',
+    color: Colors.white,
+    textAlign: 'center',
+    writingDirection: 'rtl',
+    marginTop: 4,
+  },
+  thoughtTranslation: {
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: Font.semibold,
+    color: Colors.white,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  thoughtRef: {
+    fontSize: 12,
+    fontFamily: Font.bold,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 4,
+  },
+  thoughtCompact: {
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: Font.bold,
+    color: Colors.white,
+    textAlign: 'center',
+  },
   statGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 10,
+    rowGap: 12,
   },
   statTile: {
     width: '48.5%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
     borderRadius: Radius.lg,
-    padding: 14,
+    padding: 16,
   },
   statIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statText: {
-    flex: 1,
-  },
+  statText: {},
   statLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: Font.semibold,
     color: Colors.textSecondary,
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: Font.extrabold,
     color: Colors.textPrimary,
     marginTop: 1,
