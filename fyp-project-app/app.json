@@ -84,8 +84,9 @@
       "googleClientIdExpo": "",
       "apiBaseUrl": "http://127.0.0.1:8000/api",
       "eas": {
-        "projectId": "0ee5d83f-ce94-4580-ac79-9b9416be3a2c"
+        "projectId": "249e9427-b77b-4f2d-89f0-8bff6dbd4bf4"
       }
-    }
+    },
+    "owner": "choudharyyousaf"
   }
 }
