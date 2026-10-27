@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -10,7 +10,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -22,9 +23,10 @@ import { requestPasswordReset, resetPassword } from '../services/authService';
 
 export function LoginScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Login'>>();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(route.params?.email ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -33,6 +35,14 @@ export function LoginScreen() {
   const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [showReset, setShowReset] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+
+  // Prefill the email when arriving from a freshly created account
+  useEffect(() => {
+    if (route.params?.email) {
+      setEmail(route.params.email);
+      setPassword('');
+    }
+  }, [route.params?.email]);
 
   const handleLogin = async () => {
     setLoading(true);
