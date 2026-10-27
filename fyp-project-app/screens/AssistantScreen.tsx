@@ -309,7 +309,7 @@ export function AssistantScreen() {
               <View style={[styles.bubble, styles.botBubble, styles.typing]}>
                 <ActivityIndicator size="small" color={Colors.primary} />
               </View>
-            ) : null
+            ) : undefined
           }
         />
 

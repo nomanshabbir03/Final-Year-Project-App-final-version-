@@ -1,339 +1,197 @@
-import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  ActivityIndicator,
-  Pressable,
-  Dimensions,
-} from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
-import { Magnetometer } from 'expo-sensors';
-import { Colors, Radius, Shadows } from '../constants/theme';
+import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 
-const { width: screenWidth } = Dimensions.get('window');
+import { Colors, Font } from '../constants/theme';
+import {
+  Card,
+  CenterLoader,
+  EmptyCard,
+  HeroCard,
+  HeroStat,
+  HeroStats,
+  ModuleHeader,
+  PrimaryButton,
+  moduleStyles,
+} from '../components/module/ModuleUI';
+
+const KAABA = { lat: 21.4225, lon: 39.8262 };
+const DIAL = 260;
+const ALIGNED_WITHIN = 5;
+
+const toRad = (d: number) => (d * Math.PI) / 180;
+
+/** Great-circle bearing to the Kaaba (same formula as the backend /api/prayer/qibla/). */
+function qiblaBearing(lat: number, lon: number) {
+  const phi1 = toRad(lat);
+  const phi2 = toRad(KAABA.lat);
+  const delta = toRad(KAABA.lon - lon);
+  const y = Math.sin(delta) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(delta);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function distanceKm(lat: number, lon: number) {
+  const dLat = toRad(KAABA.lat - lat);
+  const dLon = toRad(KAABA.lon - lon);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat)) * Math.cos(toRad(KAABA.lat)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export function QiblaScreen() {
   const navigation = useNavigation();
-  const [location, setLocation] = useState<{latitude: number, longitude: number} | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [heading, setHeading] = useState<number | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [qiblaAngle, setQiblaAngle] = useState<number | null>(null);
-  const [compassHeading, setCompassHeading] = useState(0);
-  const [magnetometerAvailable, setMagnetometerAvailable] = useState(true);
+  const wasAligned = useRef(false);
 
-  useEffect(() => {
-    requestLocationPermission();
-    
-    // Check if magnetometer is available
-    const subscription = Magnetometer.addListener(() => {});
-    subscription.remove();
-    
-    Magnetometer.isAvailableAsync().then((result) => {
-      setMagnetometerAvailable(result);
-    });
-    
-    return () => {
-      Magnetometer.removeAllListeners();
-    };
-  }, []);
-
-  useEffect(() => {
-    let subscription: any;
-    
-    if (magnetometerAvailable) {
-      subscription = Magnetometer.addListener((data) => {
-        const heading = Math.atan2(data.y, data.x) * (180 / Math.PI);
-        setCompassHeading((heading + 360) % 360);
-      });
-      
-      Magnetometer.setUpdateInterval(100);
-    }
-    
-    return () => {
-      if (subscription) {
-        subscription.remove();
-      }
-    };
-  }, [magnetometerAvailable]);
-
-  const requestLocationPermission = async () => {
+  const start = async () => {
+    setError(null);
+    setLoading(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        getCurrentLocation();
-      } else {
-        setLocationError('Location permission denied. Cannot calculate Qibla direction.');
-        setLoading(false);
+      if (status !== 'granted') {
+        setError('Location permission is needed to work out the Qibla direction.');
+        return;
       }
-    } catch (error) {
-      setLocationError('Failed to get location permission.');
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+    } catch {
+      setError('Could not get your location. Check that location services are on.');
+    } finally {
       setLoading(false);
     }
   };
 
-  const getCurrentLocation = async () => {
-    try {
-      const currentPosition = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = currentPosition.coords;
-      setLocation({ latitude, longitude });
-      
-      // Calculate Qibla angle
-      const angle = calculateQiblaAngle(latitude, longitude);
-      setQiblaAngle(angle);
-      
-      setLoading(false);
-    } catch (error) {
-      setLocationError('Failed to get location. Cannot calculate Qibla direction.');
-      setLoading(false);
-    }
-  };
+  // Re-check the position whenever the screen is opened.
+  useEffect(() => navigation.addListener('focus', start), [navigation]);
 
-  const calculateQiblaAngle = (latitude: number, longitude: number) => {
-    const meccaLat = 21.4225 * (Math.PI / 180);
-    const meccaLng = 39.8262 * (Math.PI / 180);
-    const userLat = latitude * (Math.PI / 180);
-    const userLng = longitude * (Math.PI / 180);
-    const deltaLng = meccaLng - userLng;
-    const y = Math.sin(deltaLng) * Math.cos(meccaLat);
-    const x = Math.cos(userLat) * Math.sin(meccaLat) - Math.sin(userLat) * Math.cos(meccaLat) * Math.cos(deltaLng);
-    const angle = Math.atan2(y, x) * (180 / Math.PI);
-    return (angle + 360) % 360;
-  };
+  useEffect(() => {
+    if (!coords) return;
+    let sub: Location.LocationSubscription | null = null;
+    Location.watchHeadingAsync((h) => {
+      // trueHeading is -1 when the device cannot correct for magnetic declination.
+      setHeading(h.trueHeading >= 0 ? h.trueHeading : h.magHeading);
+      setAccuracy(h.accuracy);
+    })
+      .then((s) => {
+        sub = s;
+      })
+      .catch(() => setError('This device has no compass. Use the bearing below with a physical compass.'));
+    return () => sub?.remove();
+  }, [coords]);
 
-  const rotation = qiblaAngle !== null ? (qiblaAngle - compassHeading + 360) % 360 : 0;
+  const bearing = coords ? qiblaBearing(coords.lat, coords.lon) : null;
+  const turn = bearing !== null && heading !== null ? ((bearing - heading + 540) % 360) - 180 : null;
+  const aligned = turn !== null && Math.abs(turn) <= ALIGNED_WITHIN;
+
+  useEffect(() => {
+    if (aligned && !wasAligned.current) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    wasAligned.current = aligned;
+  }, [aligned]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={moduleStyles.container}>
+        <ModuleHeader title="Qibla" />
+        <CenterLoader />
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Back Button */}
-      <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Back</Text>
-      </Pressable>
+    <SafeAreaView style={moduleStyles.container}>
+      <ModuleHeader title="Qibla" subtitle="Direction of the Kaaba, Makkah." />
+      <View style={moduleStyles.content}>
+        {!coords ? (
+          <>
+            <EmptyCard text={error ?? 'Location unavailable.'} icon="location-outline" />
+            <PrimaryButton label="Try again" icon="refresh" onPress={start} />
+          </>
+        ) : (
+          <>
+            <HeroCard
+              label={aligned ? 'You are facing the Qibla' : 'Qibla bearing'}
+              value={`${Math.round(bearing!)}° from north`}
+            >
+              <HeroStats>
+                <HeroStat icon="navigate" label="Distance" value={`${Math.round(distanceKm(coords.lat, coords.lon)).toLocaleString()} km`} />
+                <HeroStat
+                  icon="compass"
+                  label="Turn"
+                  value={turn === null ? '–' : aligned ? 'Aligned' : `${Math.abs(Math.round(turn))}° ${turn > 0 ? 'right' : 'left'}`}
+                />
+              </HeroStats>
+            </HeroCard>
 
-      {/* Title */}
-      <Text style={styles.title}>Qibla Direction</Text>
-      <Text style={styles.subtitle}>Point your phone flat and rotate until arrow points to Qibla</Text>
-
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Getting location...</Text>
-        </View>
-      ) : locationError ? (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{locationError}</Text>
-        </View>
-      ) : !magnetometerAvailable ? (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Compass not available on this device</Text>
-        </View>
-      ) : (
-        <View style={styles.content}>
-          {/* Compass Circle */}
-          <View style={styles.compassContainer}>
-            <View style={styles.compassCircle}>
-              {/* Direction Labels */}
-              <Text style={[styles.directionLabel, styles.northLabel]}>N</Text>
-              <Text style={[styles.directionLabel, styles.southLabel]}>S</Text>
-              <Text style={[styles.directionLabel, styles.eastLabel]}>E</Text>
-              <Text style={[styles.directionLabel, styles.westLabel]}>W</Text>
-              
-              {/* Qibla Arrow */}
-              <View 
-                style={[
-                  styles.compassArrow,
-                  { transform: [{ rotate: `${rotation}deg` }] }
-                ]}
-              >
-                <View style={styles.arrowTriangle} />
-                <Text style={styles.kaabaEmoji}>🕋</Text>
+            <Card style={{ alignItems: 'center' }}>
+              <View style={[styles.dial, aligned && { borderColor: Colors.success }]}>
+                {/* The dial turns with the phone so N always points north. */}
+                <View style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${-(heading ?? 0)}deg` }] }]}>
+                  {(['N', 'E', 'S', 'W'] as const).map((label, i) => (
+                    <View key={label} style={[styles.cardinalWrap, { transform: [{ rotate: `${i * 90}deg` }] }]}>
+                      <Text style={[styles.cardinal, label === 'N' && { color: Colors.error }]}>{label}</Text>
+                    </View>
+                  ))}
+                  <View style={[styles.cardinalWrap, { transform: [{ rotate: `${bearing}deg` }] }]}>
+                    <View style={[styles.kaaba, aligned && { backgroundColor: Colors.success }]}>
+                      <Ionicons name="cube" size={18} color={Colors.white} />
+                    </View>
+                  </View>
+                </View>
+                <Ionicons name="arrow-up" size={64} color={aligned ? Colors.success : Colors.primary} />
               </View>
-              
-              {/* Center Dot */}
-              <View style={styles.centerDot} />
-            </View>
-          </View>
+              <Text style={moduleStyles.body}>
+                {heading === null
+                  ? 'Waiting for the compass...'
+                  : aligned
+                    ? 'The arrow points to the Qibla.'
+                    : 'Turn until the Kaaba icon is at the top, under the arrow.'}
+              </Text>
+            </Card>
 
-          {/* Qibla Angle Card */}
-          <View style={styles.angleCard}>
-            <Text style={styles.angleText}>
-              Qibla Angle: {Math.round(qiblaAngle || 0)}° from North
-            </Text>
-            <Text style={styles.noteText}>Hold your phone flat for accurate reading</Text>
-          </View>
-        </View>
-      )}
+            <Card title="For an accurate reading">
+              <Text style={moduleStyles.body}>• Hold the phone flat, away from metal and magnets.</Text>
+              <Text style={moduleStyles.body}>• If the reading jumps, move the phone in a figure-8 to calibrate.</Text>
+              {accuracy !== null && accuracy < 2 ? (
+                <Text style={[moduleStyles.body, { color: Colors.error }]}>Compass accuracy is low right now. Please calibrate.</Text>
+              ) : null}
+              {error ? <Text style={[moduleStyles.body, { color: Colors.error }]}>{error}</Text> : null}
+            </Card>
+          </>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  dial: {
+    width: DIAL,
+    height: DIAL,
+    borderRadius: DIAL / 2,
+    borderWidth: 6,
+    borderColor: Colors.primarySurface,
     backgroundColor: Colors.bgLight,
-    paddingTop: 40,
-  },
-  backButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  backText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-    letterSpacing: -0.3,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    paddingHorizontal: 32,
-    marginBottom: 32,
-    lineHeight: 20,
-  },
-  loadingContainer: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    marginVertical: 8,
   },
-  loadingText: {
-    fontSize: 16,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 16,
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#ef4444',
-    textAlign: 'center',
-  },
-  content: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  compassContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 32,
-  },
-  compassCircle: {
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: Colors.white,
-    borderWidth: 3,
-    borderColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  directionLabel: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.primary,
-    position: 'absolute',
-  },
-  northLabel: {
-    top: 20,
-    left: '50%',
-    marginLeft: -10,
-  },
-  southLabel: {
-    bottom: 20,
-    left: '50%',
-    marginLeft: -10,
-  },
-  eastLabel: {
-    right: 20,
-    top: '50%',
-    marginTop: -10,
-  },
-  westLabel: {
-    left: 20,
-    top: '50%',
-    marginTop: -10,
-  },
-  compassArrow: {
-    position: 'absolute',
-    width: 6,
-    height: 100,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    top: '50%',
-    left: '50%',
-    marginLeft: -3,
-    marginTop: -50,
-  },
-  arrowTriangle: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 15,
-    borderRightWidth: 15,
-    borderBottomWidth: 30,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#ef4444',
-  },
-  kaabaEmoji: {
-    fontSize: 24,
-    position: 'absolute',
-    top: 30,
-  },
-  centerDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  cardinalWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', paddingTop: 10 },
+  cardinal: { fontFamily: Font.extrabold, fontSize: 18, color: Colors.textSecondary },
+  kaaba: {
+    marginTop: 30,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: Colors.primary,
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    marginTop: -4,
-    marginLeft: -4,
-  },
-  angleCard: {
-    backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
-    padding: 20,
     alignItems: 'center',
-    width: '100%',
-    maxWidth: 320,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    ...Shadows.card,
-  },
-  angleText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.primary,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  noteText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    fontStyle: 'italic',
+    justifyContent: 'center',
   },
 });

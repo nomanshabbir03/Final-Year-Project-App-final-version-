@@ -10,7 +10,7 @@ from django.db import IntegrityError
 
 from .models import SavedLocation
 from .serializers import SavedLocationSerializer
-from .services import WeatherAdapter, WeatherAdapterError
+from .services import WeatherAdapter, WeatherAdapterError, lookup
 
 
 def _get_request_user_id(request):
@@ -29,29 +29,32 @@ def _get_request_user_id(request):
 
 
 class WeatherByCityView(APIView):
+    """GET /weather/?city=Lahore  or  ?lat=..&lon=..  (both: city first, GPS as fallback).
+
+    With neither, the city saved in the user's profile is used. The response includes `alerts`
+    for severe weather now or in the next hours.
+    """
+
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         city = request.query_params.get("city", "").strip()
-        if not city:
-            return Response({"detail": 'Query parameter "city" is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        api_key = os.getenv("OPENWEATHER_API_KEY")
-        if not api_key:
-            return Response({"detail": "Server weather API key is not configured."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        lat = lon = None
+        if request.query_params.get("lat") and request.query_params.get("lon"):
+            try:
+                lat, lon = float(request.query_params["lat"]), float(request.query_params["lon"])
+            except ValueError:
+                return Response({"detail": "lat and lon must be numbers."}, status=status.HTTP_400_BAD_REQUEST)
+        if not city and lat is None:
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            city = profile.selected_city
+        if not city and lat is None:
+            return Response({"detail": 'Query parameter "city" (or lat/lon) is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            cache_ttl = int(os.getenv("OPENWEATHER_CACHE_TTL", "1800"))
-        except Exception:
-            cache_ttl = 1800
-
-        adapter = WeatherAdapter(api_key, cache_ttl=cache_ttl)
-        try:
-            cleaned = adapter.get_by_city(city)
+            return Response(lookup(city=city or None, lat=lat, lon=lon), status=status.HTTP_200_OK)
         except WeatherAdapterError as exc:
             return Response({"detail": str(exc)}, status=exc.status_code)
-
-        return Response(cleaned, status=status.HTTP_200_OK)
 
 
 class WeatherHealthView(APIView):

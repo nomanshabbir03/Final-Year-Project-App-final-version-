@@ -1,665 +1,314 @@
-import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  ScrollView,
-  RefreshControl,
-} from 'react-native';
-import Ionicons from '@expo/vector-icons/Ionicons';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Linking, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { api, parseJsonData, toApiErrorMessage } from '../services/api';
-import { useAuth } from '../context/AuthContext';
-import { Colors, Radius, Shadows } from '../constants/theme';
+
+import { Colors } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
+import { toApiErrorMessage } from '../services/api';
+import {
+  FREQUENCY_LABELS,
+  formatTime12,
+  getMedications,
+  getTodaySchedule,
+  logDose,
+  type DoseSlot,
+  type DoseStatus,
+  type Medication,
+  type TodaySchedule,
+} from '../services/medicationService';
+import {
+  cancelDoseFollowUp,
+  ensureNotificationPermission,
+  notifyRefills,
+  syncMedicationReminders,
+} from '../services/reminderService';
+import { DoseRow } from '../components/medication/DoseRow';
+import { MedicationHistoryTab } from '../components/medication/MedicationHistoryTab';
+import { MedicationInsightsTab } from '../components/medication/MedicationInsightsTab';
+import {
+  CenterLoader,
+  EmptyCard,
+  EntryCard,
+  Fab,
+  HeroCard,
+  HeroStat,
+  HeroStats,
+  ListRow,
+  ModuleHeader,
+  PillTabs,
+  ProgressBar,
+  SecondaryButton,
+  SectionHeader,
+  moduleStyles,
+} from '../components/module/ModuleUI';
 
-type MedicationScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+type TabKey = 'today' | 'medicines' | 'history' | 'insights';
 
-interface Medication {
-  id: number;
-  name: string;
-  dosage: string;
-  frequency: string;
-  schedule_times: string[];
-  supply_count: number;
-  refill_threshold: number;
-  notes?: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-interface MedicationLog {
-  id: number;
-  medication: number;
-  status: 'taken' | 'skipped' | 'deferred';
-  scheduled_time: string;
-  taken_at?: string;
-  notes?: string;
-  created_at: string;
-}
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'medicines', label: 'Medicines' },
+  { key: 'history', label: 'History' },
+  { key: 'insights', label: 'Insights' },
+];
 
 export function MedicationScreen() {
-  const { user } = useAuth();
-  const navigation = useNavigation<MedicationScreenNavigationProp>();
-  
+  const navigation = useNavigation<Nav>();
+  const [tab, setTab] = useState<TabKey>('today');
+  const [today, setToday] = useState<TodaySchedule | null>(null);
   const [medications, setMedications] = useState<Medication[]>([]);
-  const [medicationLogs, setMedicationLogs] = useState<MedicationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  useEffect(() => {
-    fetchMedications();
-    fetchMedicationLogs();
-  }, []);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [busySlot, setBusySlot] = useState<string | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      fetchMedications();
-      fetchMedicationLogs();
-    });
-    return unsubscribe;
-  }, [navigation]);
-
-  const fetchMedications = async (refresh = false) => {
+  const load = useCallback(async () => {
     try {
-      if (!refresh) {
-        setLoading(true);
-      }
-      console.log('API base URL:', api.defaults.baseURL);
-      console.log('Full URL:', `${api.defaults.baseURL}/medications/`);
-      const response = await api.get('/medications/');
-      const data = parseJsonData(response.data);
-      setMedications(Array.isArray(data) ? data : []);
+      const [schedule, meds] = await Promise.all([getTodaySchedule(), getMedications()]);
+      setToday(schedule);
+      setMedications(meds);
       setError(null);
+      const logged = new Set(
+        schedule.slots.filter((s) => s.log_id !== null).map((s) => `${s.medication_id}@${s.time}`)
+      );
+      syncMedicationReminders(meds, logged);
+      notifyRefills(meds);
     } catch (err) {
-      setError(toApiErrorMessage(err, 'Failed to fetch medications'));
-      console.error('Error fetching medications:', err);
+      setError(toApiErrorMessage(err, 'Failed to load medications'));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
-  const fetchMedicationLogs = async () => {
+  useEffect(() => {
+    ensureNotificationPermission();
+    const unsubscribe = navigation.addListener('focus', load);
+    return unsubscribe;
+  }, [navigation, load]);
+
+  const record = async (slot: DoseSlot, status: DoseStatus) => {
+    const key = `${slot.medication_id}@${slot.time}`;
+    setBusySlot(key);
     try {
-      console.log('API base URL:', api.defaults.baseURL);
-      console.log('Full URL:', `${api.defaults.baseURL}/medication-logs/`);
-      const response = await api.get('/medication-logs/');
-      const data = parseJsonData(response.data);
-      setMedicationLogs(Array.isArray(data) ? data : []);
+      const { medication } = await logDose(slot.medication_id, { status, dose_time: slot.time });
+      await cancelDoseFollowUp(slot);
+      if (medication.needs_refill) notifyRefills([medication]);
+      setReloadKey((k) => k + 1);
+      await load();
     } catch (err) {
-      console.error('Error fetching medication logs:', err);
+      Alert.alert('Could not log the dose', toApiErrorMessage(err, 'Please try again.'));
+    } finally {
+      setBusySlot(null);
     }
   };
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchMedications(true);
-    fetchMedicationLogs();
-  };
+  const changeLogged = (slot: DoseSlot) =>
+    Alert.alert(slot.name, `${formatTime12(slot.time)} dose`, [
+      { text: 'Mark as taken', onPress: () => record(slot, 'taken') },
+      { text: 'Mark as skipped', onPress: () => record(slot, 'skipped') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
 
-  const getTodayDosesStats = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const todayLogs = medicationLogs.filter(log => 
-      log.scheduled_time.startsWith(today)
+  const logAsNeeded = (med: Medication) =>
+    Alert.alert(`Log ${med.name}`, `Record a ${med.dosage} dose taken now?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Taken now',
+        onPress: async () => {
+          try {
+            await logDose(med.id, { status: 'taken' });
+            setReloadKey((k) => k + 1);
+            load();
+          } catch (err) {
+            Alert.alert('Could not log the dose', toApiErrorMessage(err, 'Please try again.'));
+          }
+        },
+      },
+    ]);
+
+  const callEmergency = () =>
+    Alert.alert('Emergency call', 'Call 1122 (Rescue) now?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Call now', style: 'destructive', onPress: () => Linking.openURL('tel:1122') },
+    ]);
+
+  const openMedication = (med: Medication) => navigation.navigate('AddMedication', { medicationId: med.id });
+
+  const renderToday = () => {
+    if (!today) return <EmptyCard text={error ?? 'No data.'} icon="cloud-offline-outline" />;
+    const pct = today.total ? (today.taken / today.total) * 100 : 0;
+    const attention = today.slots.filter((s) => s.status === 'due' || s.status === 'missed');
+    const later = today.slots.filter((s) => s.status === 'upcoming');
+    const done = today.slots.filter((s) => s.status === 'taken' || s.status === 'skipped' || s.status === 'deferred');
+    const asNeeded = medications.filter((m) => m.is_active && m.frequency === 'as_needed');
+    const next = today.next_dose;
+    const nextText = next
+      ? `${next.date && next.date !== today.date ? 'Tomorrow ' : ''}${formatTime12(next.time)}`
+      : 'None';
+
+    const renderSlots = (slots: DoseSlot[]) => (
+      <View style={moduleStyles.list}>
+        {slots.map((slot) => (
+          <DoseRow
+            key={`${slot.medication_id}@${slot.time}`}
+            slot={slot}
+            busy={busySlot === `${slot.medication_id}@${slot.time}`}
+            onTake={() => record(slot, 'taken')}
+            onSkip={() => record(slot, 'skipped')}
+            onChange={() => changeLogged(slot)}
+          />
+        ))}
+      </View>
     );
-    
-    // Calculate total scheduled doses for today
-    let totalDoses = 0;
-    medications.forEach(med => {
-      if (med.is_active) {
-        if (med.frequency === 'daily') {
-          totalDoses += med.schedule_times.length || 1;
-        } else if (med.frequency === 'twice_daily') {
-          totalDoses += 2;
-        } else if (med.frequency === 'three_times_daily') {
-          totalDoses += 3;
-        } else if (med.frequency === 'weekly') {
-          totalDoses += 1; // Simplified for weekly
-        }
-      }
-    });
 
-    const takenDoses = todayLogs.filter(log => log.status === 'taken').length;
-    return { taken: takenDoses, total: totalDoses };
-  };
-
-  const handleAddMedication = () => {
-    navigation.navigate('AddMedication');
-  };
-
-  const handleViewHistory = () => {
-    navigation.navigate('MedicationHistory');
-  };
-
-  const handleLogDose = async (medicationId: number, status: 'taken' | 'skipped' = 'taken') => {
-    try {
-      console.log('API base URL:', api.defaults.baseURL);
-      console.log('Full URL:', `${api.defaults.baseURL}/medication-logs/`);
-      const now = new Date().toISOString();
-      await api.post('/medication-logs/', {
-        medication: medicationId,
-        status,
-        scheduled_time: now,
-        taken_at: status === 'taken' ? now : undefined,
-      });
-      fetchMedicationLogs(); // Refresh logs
-      Alert.alert(
-        'Success',
-        `Medication ${status === 'taken' ? 'taken' : 'skipped'} successfully!`,
-        [{ text: 'OK' }]
-      );
-    } catch (err) {
-      const errorMessage = toApiErrorMessage(err, 'Failed to log dose');
-      Alert.alert('Error', errorMessage);
-      console.error('Error logging dose:', err);
-    }
-  };
-
-  const getNextDoseTime = (medication: Medication) => {
-    if (!medication.is_active || !medication.schedule_times || medication.schedule_times.length === 0) {
-      return null;
-    }
-    
-    const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes();
-    
-    // Sort times and find the next one
-    const sortedTimes = medication.schedule_times
-      .map(time => {
-        const [hours, minutes] = time.split(':').map(Number);
-        return hours * 60 + minutes;
-      })
-      .sort((a, b) => a - b);
-    
-    const nextTime = sortedTimes.find(time => time > currentTime) || sortedTimes[0];
-    const hours = Math.floor(nextTime / 60);
-    const minutes = nextTime % 60;
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  };
-
-  const getFrequencyDisplay = (frequency: string) => {
-    const frequencyMap: Record<string, string> = {
-      'daily': 'Daily',
-      'twice_daily': 'Twice Daily',
-      'three_times_daily': 'Three Times Daily',
-      'weekly': 'Weekly',
-      'as_needed': 'As Needed',
-    };
-    return frequencyMap[frequency] || frequency;
-  };
-
-  const needsRefill = (medication: Medication) => {
-    return medication.supply_count <= medication.refill_threshold;
-  };
-
-  const displayMedications = medications.slice(0, 3);
-  const shouldShowViewAllButton = medications.length > 3;
-
-  const handleViewAllMedications = () => {
-    navigation.navigate('AllMedications');
-  };
-
-  const { taken, total } = getTodayDosesStats();
-  const progressPercentage = total > 0 ? (taken / total) * 100 : 0;
-
-  if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading medications...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+      <>
+        <HeroCard
+          label={`${new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })} · Doses`}
+          value={today.total ? `${today.taken} of ${today.total} taken` : 'No doses today'}
+        >
+          {today.total ? (
+            <View style={{ marginTop: 6 }}>
+              <ProgressBar pct={pct} color={Colors.white} />
+            </View>
+          ) : null}
+          <HeroStats>
+            <HeroStat icon="alarm" label={next ? `Next · ${next.name}` : 'Next dose'} value={nextText} />
+            <HeroStat icon="cube" label="Need refill" value={String(today.refills.length)} />
+          </HeroStats>
+        </HeroCard>
 
-  if (error) {
+        {today.refills.map((med) => (
+          <EntryCard
+            key={med.id}
+            icon="warning-outline"
+            title={`Refill ${med.name}`}
+            meta={`${med.supply_count} left · refill at ${med.refill_threshold}`}
+            note={med.days_of_supply_left !== null ? `About ${med.days_of_supply_left} day(s) of supply` : 'Update the supply after refilling'}
+            noteColor={Colors.error}
+            onPress={() => openMedication(med)}
+          />
+        ))}
+
+        {attention.length > 0 ? (
+          <>
+            <SectionHeader title="Needs attention" />
+            {renderSlots(attention)}
+          </>
+        ) : null}
+
+        <SectionHeader title="Later today" actionLabel="History" onAction={() => setTab('history')} />
+        {later.length === 0 ? (
+          <EmptyCard text={today.total ? 'No more doses today.' : 'Add a medicine with dose times to build your schedule.'} />
+        ) : (
+          renderSlots(later)
+        )}
+
+        {done.length > 0 ? (
+          <>
+            <SectionHeader title="Done" />
+            {renderSlots(done)}
+          </>
+        ) : null}
+
+        {asNeeded.length > 0 ? (
+          <>
+            <SectionHeader title="As needed" />
+            <View style={moduleStyles.list}>
+              {asNeeded.map((med) => (
+                <ListRow
+                  key={med.id}
+                  icon="medical-outline"
+                  title={med.name}
+                  meta={`${med.dosage} · ${med.supply_count} left`}
+                  onPress={() => logAsNeeded(med)}
+                  trailing={<Text style={moduleStyles.link}>Log</Text>}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+      </>
+    );
+  };
+
+  const renderMedicines = () => {
+    const active = medications.filter((m) => m.is_active);
+    const paused = medications.filter((m) => !m.is_active);
+    const row = (m: Medication) => (
+      <ListRow
+        key={m.id}
+        icon={m.needs_refill ? 'warning' : 'medkit-outline'}
+        iconColor={m.needs_refill ? Colors.error : Colors.primary}
+        iconBg={m.needs_refill ? Colors.tintRose : Colors.primarySurface}
+        title={`${m.name} · ${m.dosage}`}
+        meta={`${FREQUENCY_LABELS[m.frequency]}${m.schedule_times.length ? ` · ${m.schedule_times.map(formatTime12).join(', ')}` : ''}`}
+        right={`${m.supply_count} left`}
+        rightColor={m.needs_refill ? Colors.error : undefined}
+        onPress={() => openMedication(m)}
+      />
+    );
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={() => fetchMedications(true)}>
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const handleSOSPress = () => {
-    Alert.alert(
-      'Emergency Call',
-      'Call 1122 (Rescue) now?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Call Now', 
-          style: 'destructive',
-          onPress: () => Linking.openURL('tel:1122')
-        }
-      ]
+      <>
+        {active.length === 0 ? (
+          <EmptyCard text={error ?? 'No medicines yet. Tap + to add your first one.'} icon="medkit-outline" />
+        ) : (
+          <View style={moduleStyles.list}>{active.map(row)}</View>
+        )}
+        {paused.length > 0 ? (
+          <>
+            <SectionHeader title="Paused" />
+            <View style={moduleStyles.list}>{paused.map(row)}</View>
+          </>
+        ) : null}
+        <SecondaryButton label="Add medicine" icon="add" onPress={() => navigation.navigate('AddMedication')} />
+      </>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-      >
-        <View style={styles.header}>
-          <Text style={styles.title}>Medication</Text>
-          <Text style={styles.subtitle}>Track your medications and never miss a dose.</Text>
-        </View>
+    <SafeAreaView style={moduleStyles.container}>
+      <ModuleHeader
+        title="Medication"
+        subtitle="Never miss a dose."
+        actions={[{ icon: 'call-outline', label: 'Emergency call', onPress: callEmergency }]}
+      />
+      <PillTabs tabs={TABS} value={tab} onChange={setTab} />
 
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Today's Doses</Text>
-          {total === 0 ? (
-            <Text style={styles.summaryText}>No medications scheduled for today</Text>
-          ) : (
-            <>
-              <Text style={styles.summaryText}>
-                {taken} of {total} doses taken today
-              </Text>
-              <View style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { width: `${progressPercentage}%` }
-                  ]} 
-                />
-              </View>
-            </>
-          )}
-        </View>
+      {loading ? (
+        <CenterLoader />
+      ) : (
+        <ScrollView
+          contentContainerStyle={moduleStyles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                setReloadKey((k) => k + 1);
+                load();
+              }}
+              tintColor={Colors.primary}
+            />
+          }
+        >
+          {tab === 'today'
+            ? renderToday()
+            : tab === 'medicines'
+              ? renderMedicines()
+              : tab === 'history'
+                ? <MedicationHistoryTab medications={medications} reloadKey={reloadKey} />
+                : <MedicationInsightsTab medications={medications} reloadKey={reloadKey} />}
+        </ScrollView>
+      )}
 
-        <Pressable style={styles.addMedicationButton} onPress={handleAddMedication}>
-          <Text style={styles.addMedicationButtonText}>+ Add Medication</Text>
-        </Pressable>
-
-        {displayMedications.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>💊</Text>
-            <Text style={styles.emptyText}>No medications added yet</Text>
-            <Pressable style={styles.addFirstButton} onPress={handleAddMedication}>
-              <Text style={styles.addFirstButtonText}>+ Add Your First Medication</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.medicationsSection}>
-            <Text style={styles.sectionTitle}>My Medications</Text>
-            {displayMedications.map((medication) => {
-              const nextDoseTime = getNextDoseTime(medication);
-              return (
-                <View key={medication.id} style={styles.medicationCard}>
-                  <View style={styles.medicationHeader}>
-                    <View style={styles.medicationInfo}>
-                      <Text style={styles.medicationName}>{medication.name}</Text>
-                      <Text style={styles.medicationDosage}>{medication.dosage} • {getFrequencyDisplay(medication.frequency)}</Text>
-                      {nextDoseTime && (
-                        <Text style={styles.nextDoseTime}>Next dose: {nextDoseTime}</Text>
-                      )}
-                    </View>
-                    {needsRefill(medication) && (
-                      <View style={styles.refillBadge}>
-                        <Text style={styles.refillBadgeText}>⚠️ Low Supply</Text>
-                      </View>
-                    )}
-                  </View>
-                  
-                  <View style={styles.medicationStats}>
-                    <Text style={styles.supplyText}>
-                      Supply: {medication.supply_count} units
-                    </Text>
-                    <Text style={styles.thresholdText}>
-                      Refill at: {medication.refill_threshold} units
-                    </Text>
-                  </View>
-                  
-                  {medication.is_active && (
-                    <View style={styles.actionButtons}>
-                      <Pressable 
-                        style={[styles.actionButton, styles.takeButton]} 
-                        onPress={() => handleLogDose(medication.id, 'taken')}
-                      >
-                        <Text style={styles.takeButtonText}>✓ Take</Text>
-                      </Pressable>
-                      <Pressable 
-                        style={[styles.actionButton, styles.skipButton]} 
-                        onPress={() => handleLogDose(medication.id, 'skipped')}
-                      >
-                        <Text style={styles.skipButtonText}>✕ Skip</Text>
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-            
-            {/* View All Button */}
-            {shouldShowViewAllButton && (
-              <Pressable style={styles.viewAllButton} onPress={handleViewAllMedications}>
-                <Text style={styles.viewAllButtonText}>
-                  View All Medications
-                </Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-
-        <Pressable style={styles.historyButton} onPress={handleViewHistory}>
-          <Text style={styles.historyButtonText}>View History 📋</Text>
-        </Pressable>
-      </ScrollView>
-      
-      {/* SOS Button */}
-      <Pressable style={styles.sosButton} onPress={handleSOSPress}>
-        <Ionicons name="call" size={20} color="#ffffff" />
-        <Text style={styles.sosText}>SOS</Text>
-      </Pressable>
+      {tab === 'today' || tab === 'medicines' ? (
+        <Fab onPress={() => navigation.navigate('AddMedication')} label="Add medicine" />
+      ) : null}
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgLight,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    paddingHorizontal: 16,
-  },
-  summaryCard: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 8,
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 12,
-    gap: 8,
-    ...Shadows.card,
-  },
-  summaryTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  summaryText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: Colors.borderLight,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: Colors.primary,
-    borderRadius: 4,
-  },
-  addMedicationButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 16,
-    ...Shadows.button,
-  },
-  addMedicationButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  medicationsSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 12,
-    letterSpacing: -0.3,
-  },
-  medicationCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 16,
-    marginBottom: 12,
-    ...Shadows.card,
-  },
-  medicationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  medicationInfo: {
-    flex: 1,
-  },
-  medicationName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  medicationDosage: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  nextDoseTime: {
-    fontSize: 13,
-    color: Colors.primary,
-    fontWeight: '600',
-  },
-  medicationStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-  },
-  supplyText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  thresholdText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  takeButton: {
-    backgroundColor: Colors.success,
-  },
-  takeButtonText: {
-    color: Colors.white,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  skipButton: {
-    backgroundColor: Colors.error,
-  },
-  skipButtonText: {
-    color: Colors.white,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  refillBadge: {
-    backgroundColor: '#fff3cd',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#ffeaa7',
-  },
-  refillBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#856404',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 60,
-  },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 24,
-    fontWeight: '500',
-  },
-  addFirstButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    ...Shadows.button,
-  },
-  addFirstButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  sosButton: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#E53935',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  sosText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  viewAllButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  viewAllButtonText: {
-    color: Colors.primary,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  historyButton: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 8,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 32,
-  },
-  historyButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: Colors.textSecondary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  errorText: {
-    fontSize: 16,
-    color: Colors.error,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  retryButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    ...Shadows.button,
-  },
-  retryButtonText: {
-    color: Colors.white,
-    fontWeight: '600',
-    fontSize: 16,
-  },
-});

@@ -38,6 +38,7 @@ class Task(models.Model):
 	email_reminder_enabled = models.BooleanField(default=False)
 	attachment = models.FileField(upload_to='task_attachments/', blank=True, null=True)
 	user = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
+	completed_at = models.DateTimeField(null=True, blank=True)
 	created_at = models.DateTimeField(auto_now_add=True)
 	updated_at = models.DateTimeField(auto_now=True)
 

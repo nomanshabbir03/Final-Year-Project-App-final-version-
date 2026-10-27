@@ -1,452 +1,346 @@
-import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  Platform,
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { api, parseJsonData, toApiErrorMessage } from '../services/api';
-import { Colors, Radius, Shadows } from '../constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+
+import { Colors, Font, Radius } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
+import { toApiErrorMessage } from '../services/api';
+import {
+  FREQUENCY_LABELS,
+  createMedication,
+  deleteMedication,
+  getMedication,
+  getMedications,
+  updateMedication,
+  type Frequency,
+  type MedicationInput,
+} from '../services/medicationService';
+import { ensureNotificationPermission, parseLocalDate, syncMedicationReminders } from '../services/reminderService';
+import { DateTimeInput } from '../components/module/DateTimeInput';
+import {
+  CenterLoader,
+  ChipRow,
+  ErrorText,
+  Field,
+  FormCard,
+  FormHeader,
+  Input,
+  PrimaryButton,
+  SecondaryButton,
+  ToggleRow,
+  moduleStyles,
+} from '../components/module/ModuleUI';
+import { toDateStr } from '../utils/taskFormat';
 
-type AddMedicationScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Route = RouteProp<RootStackParamList, 'AddMedication'>;
 
-type MedicationFrequency = 'daily' | 'twice_daily' | 'three_times_daily' | 'weekly' | 'as_needed';
+const FREQUENCIES = (Object.keys(FREQUENCY_LABELS) as Frequency[]).map((key) => ({ key, label: FREQUENCY_LABELS[key] }));
+const DEFAULT_TIMES: Record<Frequency, string[]> = {
+  daily: ['08:00'],
+  twice_daily: ['08:00', '20:00'],
+  three_times_daily: ['08:00', '14:00', '20:00'],
+  weekly: ['09:00'],
+  as_needed: [],
+};
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function timeToDate(hhmm: string) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+
+function dateToTime(date: Date) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
 
 export function AddMedicationScreen() {
-  const navigation = useNavigation<AddMedicationScreenNavigationProp>();
-  
-  // Form state
-  const [medicationName, setMedicationName] = useState('');
+  const navigation = useNavigation<Nav>();
+  const { params } = useRoute<Route>();
+  const editingId = params?.medicationId ?? null;
+
+  const [loading, setLoading] = useState(Boolean(editingId));
+  const [name, setName] = useState('');
   const [dosage, setDosage] = useState('');
-  const [frequency, setFrequency] = useState<MedicationFrequency>('daily');
-  const [scheduleTimes, setScheduleTimes] = useState<string[]>(['08:00']);
-  const [supplyCount, setSupplyCount] = useState('');
-  const [refillThreshold, setRefillThreshold] = useState('');
+  const [frequency, setFrequency] = useState<Frequency>('daily');
+  const [times, setTimes] = useState<string[]>(DEFAULT_TIMES.daily);
+  const [days, setDays] = useState<number[]>([new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [doseUnits, setDoseUnits] = useState('1');
+  const [supply, setSupply] = useState('30');
+  const [threshold, setThreshold] = useState('7');
+  const [doctor, setDoctor] = useState('');
+  const [instructions, setInstructions] = useState('');
   const [notes, setNotes] = useState('');
-  
-  // UI state
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [selectedTimeIndex, setSelectedTimeIndex] = useState(0);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [active, setActive] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Update schedule times based on frequency
-  React.useEffect(() => {
-    switch (frequency) {
-      case 'daily':
-        setScheduleTimes(['08:00']);
-        break;
-      case 'twice_daily':
-        setScheduleTimes(['08:00', '20:00']);
-        break;
-      case 'three_times_daily':
-        setScheduleTimes(['08:00', '14:00', '20:00']);
-        break;
-      case 'weekly':
-      case 'as_needed':
-        setScheduleTimes(['09:00']);
-        break;
-    }
-  }, [frequency]);
+  useEffect(() => {
+    if (!editingId) return;
+    getMedication(editingId)
+      .then((m) => {
+        setName(m.name);
+        setDosage(m.dosage);
+        setFrequency(m.frequency);
+        setTimes(m.schedule_times.length ? m.schedule_times : DEFAULT_TIMES[m.frequency]);
+        setDays(m.days_of_week.length ? m.days_of_week : [0]);
+        setStartDate(m.start_date ? parseLocalDate(m.start_date) : null);
+        setEndDate(m.end_date ? parseLocalDate(m.end_date) : null);
+        setDoseUnits(String(m.dose_units));
+        setSupply(String(m.supply_count));
+        setThreshold(String(m.refill_threshold));
+        setDoctor(m.doctor_name);
+        setInstructions(m.instructions);
+        setNotes(m.notes ?? '');
+        setActive(m.is_active);
+      })
+      .catch((err) => setError(toApiErrorMessage(err, 'Could not load this medicine.')))
+      .finally(() => setLoading(false));
+  }, [editingId]);
 
-  const handleAddMedication = async () => {
-    setLocalError(null);
-    setIsSaving(true);
-    
-    const trimmedName = medicationName.trim();
-    const trimmedDosage = dosage.trim();
-    
-    // Validation
-    if (!trimmedName) {
-      setLocalError('Medication name is required.');
-      setIsSaving(false);
+  const changeFrequency = (next: Frequency) => {
+    setFrequency(next);
+    const needed = DEFAULT_TIMES[next].length;
+    // Keep the times the user already picked where possible.
+    if (next === 'as_needed') setTimes([]);
+    else if (next === 'daily' || next === 'weekly') setTimes(times.length ? times.slice(0, Math.max(1, times.length)) : DEFAULT_TIMES[next]);
+    else setTimes([...times, ...DEFAULT_TIMES[next]].filter((t, i, all) => all.indexOf(t) === i).slice(0, needed).sort());
+  };
+
+  const fixedCount = frequency === 'twice_daily' ? 2 : frequency === 'three_times_daily' ? 3 : null;
+
+  const setTimeAt = (index: number, value: Date) => {
+    const next = [...times];
+    next[index] = dateToTime(value);
+    setTimes(next);
+  };
+
+  const toInt = (value: string) => (/^\d+$/.test(value.trim()) ? Number(value.trim()) : NaN);
+
+  const handleSave = async () => {
+    setError(null);
+    if (!name.trim() || !dosage.trim()) {
+      setError('Enter the medicine name and dosage.');
       return;
     }
-    
-    if (!trimmedDosage) {
-      setLocalError('Dosage is required.');
-      setIsSaving(false);
+    if (frequency !== 'as_needed' && times.length === 0) {
+      setError('Add at least one dose time.');
+      return;
+    }
+    if (new Set(times).size !== times.length) {
+      setError('Two doses are set to the same time.');
+      return;
+    }
+    if (frequency === 'weekly' && days.length === 0) {
+      setError('Pick at least one day of the week.');
+      return;
+    }
+    if (startDate && endDate && endDate < startDate) {
+      setError('The end date is before the start date.');
+      return;
+    }
+    const units = toInt(doseUnits);
+    const supplyCount = toInt(supply);
+    const refillAt = toInt(threshold);
+    if (!(units >= 1) || Number.isNaN(supplyCount) || Number.isNaN(refillAt)) {
+      setError('Dose units, supply and refill level must be whole numbers.');
       return;
     }
 
-    const payload = {
-      name: trimmedName,
-      dosage: trimmedDosage,
+    const payload: MedicationInput = {
+      name: name.trim(),
+      dosage: dosage.trim(),
       frequency,
-      schedule_times: scheduleTimes,
-      supply_count: parseInt(supplyCount) || 0,
-      refill_threshold: parseInt(refillThreshold) || 7,
-      notes: notes.trim()
+      schedule_times: [...times].sort(),
+      days_of_week: frequency === 'weekly' ? days : [],
+      start_date: startDate ? toDateStr(startDate) : null,
+      end_date: endDate ? toDateStr(endDate) : null,
+      dose_units: units,
+      supply_count: supplyCount,
+      refill_threshold: refillAt,
+      doctor_name: doctor.trim(),
+      instructions: instructions.trim(),
+      notes: notes.trim(),
+      is_active: active,
     };
-    
-    console.log('Sending payload to backend:', payload);
 
+    setSaving(true);
     try {
-      const response = await api.post('/medications/', payload);
-      const data = parseJsonData(response.data);
-      
-      if (!data) {
-        setLocalError('Unable to add medication. Please try again.');
-        setIsSaving(false);
-        return;
-      }
+      if (editingId) await updateMedication(editingId, payload);
+      else await createMedication(payload);
+      await ensureNotificationPermission();
+      syncMedicationReminders(await getMedications());
+      navigation.goBack();
+    } catch (err) {
+      setError(toApiErrorMessage(err, 'Could not save the medicine.'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
-      // Navigate back to MedicationScreen on success
-      Alert.alert(
-        'Success',
-        'Medication added successfully!',
-        [
-          { 
-            text: 'OK', 
-            onPress: () => navigation.goBack() 
+  const handleDelete = () =>
+    Alert.alert('Delete medicine', `Delete ${name} and its dose history?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteMedication(editingId!);
+            syncMedicationReminders(await getMedications());
+            navigation.goBack();
+          } catch (err) {
+            Alert.alert('Error', toApiErrorMessage(err, 'Could not delete the medicine.'));
           }
-        ]
-      );
-    } catch (error) {
-      console.error('Error adding medication:', error);
-      setLocalError(toApiErrorMessage(error, 'Failed to add medication. Please check your connection and try again.'));
-      setIsSaving(false);
-    }
-  };
+        },
+      },
+    ]);
 
-  const handleTimeChange = (event: any, selectedDate?: Date) => {
-    setShowTimePicker(false);
-    
-    if (event.type === 'set' && selectedDate) {
-      setSelectedDate(selectedDate);
-      const timeStr = selectedDate.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false 
-      });
-      
-      const newScheduleTimes = [...scheduleTimes];
-      newScheduleTimes[selectedTimeIndex] = timeStr;
-      setScheduleTimes(newScheduleTimes);
-    }
-  };
-
-  const showTimePickerForIndex = (index: number) => {
-    setSelectedTimeIndex(index);
-    setShowTimePicker(true);
-  };
-
-  const formatTimeDisplay = (time: string) => {
-    if (!time) return 'Select time';
-    const [hours, minutes] = time.split(':');
-    const hour = parseInt(hours);
-    const minute = parseInt(minutes);
-    const date = new Date();
-    date.setHours(hour, minute);
-    return date.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit',
-      hour12: true 
-    });
-  };
-
-  const handleGoBack = () => {
-    navigation.goBack();
-  };
-
-  const frequencyOptions: { value: MedicationFrequency; label: string }[] = [
-    { value: 'daily', label: 'Daily' },
-    { value: 'twice_daily', label: 'Twice Daily' },
-    { value: 'three_times_daily', label: 'Three Times Daily' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'as_needed', label: 'As Needed' },
-  ];
+  if (loading) {
+    return (
+      <SafeAreaView style={moduleStyles.container}>
+        <FormHeader title="Edit Medicine" />
+        <CenterLoader />
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.modalHeader}>
-          <Pressable onPress={handleGoBack}>
-            <Text style={styles.backButton}>← Back</Text>
-          </Pressable>
-          <Text style={styles.modalTitle}>Add New Medication</Text>
-          <View style={styles.placeholder} />
-        </View>
-        
-        <View style={styles.formCard}>
-          {/* Medication Name */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Medication Name</Text>
-            <TextInput
-              style={styles.formInput}
-              placeholder="e.g. Paracetamol"
-              placeholderTextColor="#9CA3AF"
-              value={medicationName}
-              onChangeText={setMedicationName}
-            />
-          </View>
+    <SafeAreaView style={moduleStyles.container}>
+      <FormHeader title={editingId ? 'Edit Medicine' : 'Add Medicine'} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={moduleStyles.formContent} keyboardShouldPersistTaps="handled">
+          <FormCard>
+            <Field label="Medicine name">
+              <Input placeholder="e.g. Panadol" value={name} onChangeText={setName} />
+            </Field>
+            <Field label="Dosage">
+              <Input placeholder="e.g. 500 mg, 1 tablet" value={dosage} onChangeText={setDosage} />
+            </Field>
+            <Field label="How often">
+              <ChipRow options={FREQUENCIES} value={frequency} onChange={changeFrequency} />
+            </Field>
 
-          {/* Dosage */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Dosage</Text>
-            <TextInput
-              style={styles.formInput}
-              placeholder="e.g. 500mg"
-              placeholderTextColor="#9CA3AF"
-              value={dosage}
-              onChangeText={setDosage}
-            />
-          </View>
+            {frequency === 'weekly' ? (
+              <Field label="On these days">
+                <View style={styles.days}>
+                  {WEEKDAYS.map((label, index) => {
+                    const on = days.includes(index);
+                    return (
+                      <Pressable
+                        key={label}
+                        style={[styles.day, on && styles.dayOn]}
+                        onPress={() => setDays(on ? days.filter((d) => d !== index) : [...days, index].sort())}
+                      >
+                        <Text style={[styles.dayText, on && styles.dayTextOn]}>{label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </Field>
+            ) : null}
 
-          {/* Frequency */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Frequency</Text>
-            <View style={styles.frequencyContainer}>
-              {frequencyOptions.map((option) => (
-                <Pressable
-                  key={option.value}
-                  style={[
-                    styles.frequencyButton,
-                    frequency === option.value && styles.frequencyButtonActive
-                  ]}
-                  onPress={() => setFrequency(option.value)}
-                >
-                  <Text style={[
-                    styles.frequencyButtonText,
-                    frequency === option.value && styles.frequencyButtonTextActive
-                  ]}>
-                    {option.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          {/* Schedule Times */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Schedule Times</Text>
-            <View style={styles.scheduleTimesContainer}>
-              {scheduleTimes.map((time, index) => (
-                <Pressable 
-                  key={index} 
-                  style={styles.timePickerButton} 
-                  onPress={() => showTimePickerForIndex(index)}
-                >
-                  <Text style={styles.timePickerText}>
-                    {formatTimeDisplay(time)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          {/* Supply Count */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Supply Count (tablets/units)</Text>
-            <TextInput
-              style={styles.formInput}
-              placeholder="e.g. 30"
-              placeholderTextColor="#9CA3AF"
-              value={supplyCount}
-              onChangeText={setSupplyCount}
-              keyboardType="numeric"
-            />
-          </View>
-
-          {/* Refill Threshold */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Refill Alert (days before empty)</Text>
-            <TextInput
-              style={styles.formInput}
-              placeholder="e.g. 7"
-              placeholderTextColor="#9CA3AF"
-              value={refillThreshold}
-              onChangeText={setRefillThreshold}
-              keyboardType="numeric"
-            />
-          </View>
-
-          {/* Notes */}
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Notes / Doctor Instructions</Text>
-            <TextInput
-              style={[styles.formInput, styles.formTextarea]}
-              placeholder="e.g. Take after meals"
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={3}
-              value={notes}
-              onChangeText={setNotes}
-            />
-          </View>
-
-          {/* Add Medication Button */}
-          <Pressable 
-            style={[styles.addMedicationButton, isSaving && styles.addMedicationButtonDisabled]} 
-            onPress={handleAddMedication} 
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator size="small" color={Colors.white} />
+            {frequency !== 'as_needed' ? (
+              <Field label="Dose times" hint="You get a reminder at each time and a follow-up 10 minutes later if the dose is not logged.">
+                {times.map((t, index) => (
+                  <View key={index} style={moduleStyles.row}>
+                    <View style={{ flex: 1 }}>
+                      <DateTimeInput value={timeToDate(t)} mode="time" onChange={(d) => setTimeAt(index, d)} />
+                    </View>
+                    {!fixedCount && times.length > 1 ? (
+                      <Pressable onPress={() => setTimes(times.filter((_, i) => i !== index))} hitSlop={8}>
+                        <Ionicons name="close-circle" size={22} color={Colors.textHint} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ))}
+                {!fixedCount && times.length < 6 ? (
+                  <Pressable onPress={() => setTimes([...times, '12:00'])} hitSlop={8}>
+                    <Text style={moduleStyles.link}>+ Add another time</Text>
+                  </Pressable>
+                ) : null}
+              </Field>
             ) : (
-              <Text style={styles.addMedicationButtonText}>Add Medication</Text>
+              <Text style={moduleStyles.muted}>As-needed medicines have no schedule. Log a dose from the Today tab whenever you take one.</Text>
             )}
-          </Pressable>
+          </FormCard>
 
-          {localError ? <Text style={styles.errorText}>{localError}</Text> : null}
-        </View>
+          <FormCard>
+            <Field label="Course start (optional)">
+              <DateTimeInput value={startDate} mode="date" onChange={setStartDate} onClear={() => setStartDate(null)} placeholder="Starts today" />
+            </Field>
+            <Field label="Course end (optional)">
+              <DateTimeInput value={endDate} mode="date" onChange={setEndDate} onClear={() => setEndDate(null)} placeholder="No end date" />
+            </Field>
+          </FormCard>
 
-        {showTimePicker && (
-          <DateTimePicker
-            value={selectedDate}
-            mode="time"
-            display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            onChange={handleTimeChange}
-          />
-        )}
-      </ScrollView>
+          <FormCard>
+            <View style={moduleStyles.grid}>
+              <View style={{ flex: 1 }}>
+                <Field label="Units per dose">
+                  <Input keyboardType="number-pad" value={doseUnits} onChangeText={setDoseUnits} />
+                </Field>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Field label="In stock">
+                  <Input keyboardType="number-pad" value={supply} onChangeText={setSupply} />
+                </Field>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Field label="Refill at">
+                  <Input keyboardType="number-pad" value={threshold} onChangeText={setThreshold} />
+                </Field>
+              </View>
+            </View>
+            <Text style={moduleStyles.muted}>Taking a dose lowers the stock. You get a refill alert when it reaches the refill level.</Text>
+          </FormCard>
+
+          <FormCard>
+            <Field label="Doctor (optional)">
+              <Input placeholder="e.g. Dr. Ayesha Khan" value={doctor} onChangeText={setDoctor} />
+            </Field>
+            <Field label="Doctor's instructions (optional)">
+              <Input placeholder="e.g. After meals, with water" multiline value={instructions} onChangeText={setInstructions} />
+            </Field>
+            <Field label="Health notes (optional)">
+              <Input placeholder="Allergies, side effects, test results..." multiline value={notes} onChangeText={setNotes} />
+            </Field>
+            {editingId ? (
+              <ToggleRow title="Active" meta="Paused medicines get no reminders" value={active} onValueChange={setActive} />
+            ) : null}
+          </FormCard>
+
+          <View style={{ paddingHorizontal: 16, gap: 10 }}>
+            <ErrorText text={error} />
+            <PrimaryButton label={editingId ? 'Save Changes' : 'Add Medicine'} onPress={handleSave} loading={saving} />
+            {editingId ? <SecondaryButton label="Delete medicine" icon="trash-outline" danger onPress={handleDelete} /> : null}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  days: { flexDirection: 'row', gap: 6 },
+  day: {
     flex: 1,
-    backgroundColor: Colors.bgLight,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    flex: 1,
-    letterSpacing: -0.3,
-  },
-  placeholder: {
-    width: 60,
-  },
-  formCard: {
+    height: 38,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
     backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 16,
-    gap: 16,
-    marginHorizontal: 16,
-    marginBottom: 32,
-    ...Shadows.card,
-  },
-  formGroup: {
-    gap: 8,
-  },
-  formLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  formInput: {
-    height: 42,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.bgLight,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    fontWeight: '400',
-    color: Colors.textPrimary,
-  },
-  formTextarea: {
-    height: 80,
-    textAlignVertical: 'top',
-    paddingTop: 12,
-  },
-  frequencyContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  frequencyButton: {
-    height: 42,
-    borderWidth: 1.5,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    minWidth: '45%',
-  },
-  frequencyButtonActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-    ...Shadows.button,
-  },
-  frequencyButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-  frequencyButtonTextActive: {
-    color: Colors.white,
-  },
-  scheduleTimesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  timePickerButton: {
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.bgLight,
-    height: 42,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    minWidth: 100,
-  },
-  timePickerText: {
-    fontSize: 14,
-    fontWeight: '400',
-    color: Colors.textPrimary,
-  },
-  addMedicationButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
-    ...Shadows.button,
   },
-  addMedicationButtonDisabled: {
-    backgroundColor: Colors.primaryLight,
-  },
-  addMedicationButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  errorText: {
-    color: Colors.error,
-    fontWeight: '600',
-    marginTop: 4,
-  },
+  dayOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  dayText: { fontFamily: Font.semibold, fontSize: 12, color: Colors.textSecondary },
+  dayTextOn: { color: Colors.white },
 });

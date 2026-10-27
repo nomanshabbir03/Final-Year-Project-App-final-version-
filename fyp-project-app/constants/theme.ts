@@ -29,6 +29,7 @@ export const Colors = {
   tintIndigo: '#EEF2FF',
   tintRose: '#FFF1F2',
   tintSlate: '#F1F5F9',
+  tintGreen: '#ECFDF5',
   accentRose: '#F43F5E',
 
   textPrimary: '#18181B',    // Main text — light mode

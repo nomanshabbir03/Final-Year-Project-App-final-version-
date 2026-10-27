@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 from decouple import config
 import dj_database_url
@@ -73,6 +74,8 @@ INSTALLED_APPS = [
     'budget',
     'fitness',
     'assistant',
+    'community',
+    'prayer',
 ]
 
 MIDDLEWARE = [
@@ -167,6 +170,7 @@ CORS_ALLOWED_ORIGINS = [
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'accounts.supabase_auth.SupabaseJWTAuthentication',
+        'accounts.dev_auth.DevBypassAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
@@ -184,6 +188,9 @@ REST_FRAMEWORK = {
 SUPABASE_URL = config('SUPABASE_URL', default='').rstrip('/')
 # Only needed if the project still uses the legacy HS256 JWT secret (not asymmetric signing keys).
 SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
+# DEV ONLY: requests without a token act as a shared demo user (login disabled). Never on without DEBUG,
+# and never during `manage.py test` so the auth tests keep checking real authentication.
+DEV_AUTH_BYPASS = DEBUG and config('DEV_AUTH_BYPASS', default=False, cast=bool) and 'test' not in sys.argv[1:2]
 
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='')
 if not EMAIL_BACKEND:

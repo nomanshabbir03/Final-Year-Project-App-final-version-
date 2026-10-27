@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 
-import React, { useEffect } from 'react';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import React, { useEffect, useState } from 'react';
+import { StatusBar } from 'expo-status-bar';
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -11,10 +11,7 @@ import {
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
 
-import { AppProvider } from './context/AppContext';
-import { AuthProvider } from './context/AuthContext';
-import { AppNavigator } from './navigation/AppNavigator';
-import { requestNotificationPermissions } from './services/notificationService';
+import { applyAppearance, isDarkMode, loadAppearance } from './constants/appearance';
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
@@ -24,22 +21,26 @@ export default function App() {
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,
   });
+  const [Root, setRoot] = useState<React.ComponentType | null>(null);
 
   useEffect(() => {
-    requestNotificationPermissions();
+    loadAppearance().then((settings) => {
+      applyAppearance(settings);
+      // Screens are loaded only now, so their styles are built with the saved theme and text size.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { AppRoot } = require('./AppRoot') as typeof import('./AppRoot');
+      setRoot(() => AppRoot);
+    });
   }, []);
 
-  if (!fontsLoaded && !fontError) {
+  if ((!fontsLoaded && !fontError) || !Root) {
     return null;
   }
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <AppProvider>
-          <AppNavigator />
-        </AppProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <>
+      <StatusBar style={isDarkMode() ? 'light' : 'dark'} />
+      <Root />
+    </>
   );
 }

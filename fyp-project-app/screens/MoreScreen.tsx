@@ -51,6 +51,15 @@ export function MoreScreen() {
       screen: 'Fitness' as keyof RootStackParamList,
     },
     {
+      id: 'community',
+      icon: 'people' as keyof typeof Ionicons.glyphMap,
+      tint: Colors.tintOrange,
+      color: Colors.accentOlive,
+      title: 'Community',
+      description: 'Posts, streaks & challenges',
+      screen: 'Community' as keyof RootStackParamList,
+    },
+    {
       id: 'profile',
       icon: 'person' as keyof typeof Ionicons.glyphMap,
       tint: Colors.tintAmber,
@@ -72,6 +81,8 @@ export function MoreScreen() {
       navigation.navigate('Fitness');
     } else if (screen === 'Profile') {
       navigation.navigate('Profile');
+    } else if (screen === 'Community') {
+      navigation.navigate('Community');
     }
   };
 

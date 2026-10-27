@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import timedelta
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -43,6 +44,16 @@ class WeatherAdapter:
 
         payload = self._fetch_one_call(city_clean)
         self._set_cached(city_key, city_clean, payload)
+        return payload
+
+    def get_by_coords(self, lat: float, lon: float) -> dict:
+        """GPS fallback: weather for a position when no city name is known or it cannot be found."""
+        key = f'@{round(lat, 2)},{round(lon, 2)}'
+        cached = self._get_cached(key)
+        if cached:
+            return cached
+        payload = self._fetch_weather({'lat': lat, 'lon': lon}, f'{lat:.2f}, {lon:.2f}')
+        self._set_cached(key, payload.get('city') or key, payload)
         return payload
 
     def geocode_city(self, city: str):
@@ -99,11 +110,12 @@ class WeatherAdapter:
         if not coords or coords.get('lat') is None or coords.get('lon') is None:
             raise WeatherAdapterError('City not found.', 404)
 
-        return self._fetch_forecast_fallback(city, coords)
+        return self._fetch_weather({'q': city}, city)
 
-    def _fetch_forecast_fallback(self, city: str, coords: dict) -> dict:
+    def _fetch_weather(self, place: dict, city: str) -> dict:
+        """Current weather + 3-hour forecast (free plan) for `place` ({'q': city} or {'lat','lon'})."""
         try:
-            query = urlencode({'q': city, 'appid': self.api_key, 'units': 'metric'})
+            query = urlencode({**place, 'appid': self.api_key, 'units': 'metric'})
             url = f'https://api.openweathermap.org/data/2.5/weather?{query}'
             with urlopen(url, timeout=10) as response:
                 payload = json.loads(response.read().decode('utf-8'))
@@ -117,7 +129,7 @@ class WeatherAdapter:
         hourly_items = []
         daily_groups: dict = {}
         try:
-            forecast_query = urlencode({'q': city, 'appid': self.api_key, 'units': 'metric'})
+            forecast_query = urlencode({**place, 'appid': self.api_key, 'units': 'metric'})
             forecast_url = f'https://api.openweathermap.org/data/2.5/forecast?{forecast_query}'
             with urlopen(forecast_url, timeout=10) as fresp:
                 forecast_payload = json.loads(fresp.read().decode('utf-8'))
@@ -127,6 +139,8 @@ class WeatherAdapter:
                         'temp': item.get('main', {}).get('temp'),
                         'pop': item.get('pop'),
                         'humidity': item.get('main', {}).get('humidity'),
+                        'wind_speed': item.get('wind', {}).get('speed'),
+                        'rain_3h': (item.get('rain') or {}).get('3h'),
                         'weather': item.get('weather'),
                     })
                     dt_value = int(item.get('dt', 0) or 0)
@@ -235,3 +249,82 @@ class WeatherAdapter:
             raise WeatherAdapterError(message, exc.code)
         except (URLError, TimeoutError, json.JSONDecodeError):
             raise WeatherAdapterError('Failed to fetch air pollution data.', 502)
+
+
+# ---------------------------------------------------------------- severe weather (FR-08.3)
+# OpenWeather condition ids: https://openweathermap.org/weather-conditions
+HEAT_C = 40
+COLD_C = 0
+WIND_MS = 15          # ~54 km/h, "strong wind"
+HEAVY_RAIN_MM_3H = 15
+VISIBILITY_M = 1000
+
+
+def _ids(entry):
+    return [w.get('id') for w in (entry.get('weather') or []) if isinstance(w, dict) and w.get('id')]
+
+
+def severe_alerts(payload: dict) -> list:
+    """Warnings for the current conditions and the next 12 hours of forecast."""
+    alerts = {}
+    current = payload.get('current') or {}
+    entries = [('now', current)] + [(h.get('dt'), h) for h in (payload.get('hourly') or [])[:4]]
+
+    def add(key, severity, title, message, when):
+        if key not in alerts:
+            alerts[key] = {'id': key, 'severity': severity, 'title': title, 'message': message,
+                           'starts': None if when == 'now' else when}
+
+    for when, entry in entries:
+        soon = 'now' if when == 'now' else 'in the next hours'
+        ids = _ids(entry)
+        temp = entry.get('temp')
+        wind = entry.get('wind_speed')
+        if any(200 <= i < 300 for i in ids):
+            add('thunderstorm', 'high', 'Thunderstorm warning', f'Thunderstorms expected {soon}. Stay indoors if you can.', when)
+        if any(i in (502, 503, 504, 522, 531) for i in ids) or (entry.get('rain_3h') or 0) >= HEAVY_RAIN_MM_3H:
+            add('heavy_rain', 'high', 'Heavy rain', f'Heavy rain {soon}. Watch out for flooding on roads.', when)
+        if any(i in (602, 622) for i in ids):
+            add('heavy_snow', 'high', 'Heavy snow', f'Heavy snow {soon}. Travel may be difficult.', when)
+        if any(i in (751, 761, 731) for i in ids):
+            add('dust', 'medium', 'Dust or sand storm', f'Dust in the air {soon}. Wear a mask outside.', when)
+        if any(i in (771, 781) for i in ids):
+            add('squall', 'high', 'Squalls or tornado', f'Dangerous winds {soon}. Take shelter.', when)
+        if isinstance(temp, (int, float)) and temp >= HEAT_C:
+            add('heat', 'high', 'Extreme heat', f'{round(temp)}°C {soon}. Drink water and avoid the midday sun.', when)
+        if isinstance(temp, (int, float)) and temp <= COLD_C:
+            add('freezing', 'medium', 'Freezing temperatures', f'{round(temp)}°C {soon}. Roads may be icy.', when)
+        if isinstance(wind, (int, float)) and wind >= WIND_MS:
+            add('wind', 'medium', 'Strong wind', f'Winds around {round(wind * 3.6)} km/h {soon}.', when)
+    visibility = current.get('visibility')
+    if isinstance(visibility, (int, float)) and visibility < VISIBILITY_M:
+        add('visibility', 'medium', 'Low visibility', f'Visibility is only {visibility} m. Drive carefully.', 'now')
+    order = {'high': 0, 'medium': 1}
+    return sorted(alerts.values(), key=lambda a: order[a['severity']])
+
+
+def lookup(city=None, lat=None, lon=None) -> dict:
+    """Weather by city, falling back to GPS coordinates when the city is missing or not found.
+    Adds the severe-weather alerts to the payload."""
+    api_key = os.getenv('OPENWEATHER_API_KEY')
+    if not api_key:
+        raise WeatherAdapterError('Server weather API key is not configured.', 503)
+    try:
+        cache_ttl = int(os.getenv('OPENWEATHER_CACHE_TTL', '1800'))
+    except ValueError:
+        cache_ttl = 1800
+    adapter = WeatherAdapter(api_key, cache_ttl=cache_ttl)
+
+    payload = None
+    if city:
+        try:
+            payload = adapter.get_by_city(city)
+        except WeatherAdapterError as exc:
+            if lat is None or exc.status_code not in (400, 404):
+                raise
+    if payload is None:
+        if lat is None or lon is None:
+            raise WeatherAdapterError('Send a city or your location.', 400)
+        payload = adapter.get_by_coords(lat, lon)
+        payload = {**payload, 'source': 'gps'}
+    return {**payload, 'alerts': severe_alerts(payload)}

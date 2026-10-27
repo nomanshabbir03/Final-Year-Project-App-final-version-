@@ -25,6 +25,16 @@ type BackendWeatherResponse = {
   };
   hourly?: Array<{ dt?: number; temp?: number; feels_like?: number; pop?: number; humidity?: number; weather?: any }>;
   daily?: Array<any>;
+  alerts?: WeatherAlert[];
+  source?: 'gps';
+};
+
+export type WeatherAlert = {
+  id: string;
+  severity: 'high' | 'medium';
+  title: string;
+  message: string;
+  starts: number | null;
 };
 
 export type WeatherSnapshot = {
@@ -56,19 +66,29 @@ export type WeatherSnapshot = {
     condition?: string;
   }>;
   updatedAt: string;
+  alerts?: WeatherAlert[];
+  visibilityM?: number;
+  pressure?: number;
+  fromGps?: boolean;
 };
 
 export async function fetchWeatherByCity(city: string) {
+  return fetchWeather({ city });
+}
+
+/** City first; when lat/lon are also sent the server falls back to them if the city is not found. */
+export async function fetchWeather(place: { city?: string; lat?: number; lon?: number }) {
   let response;
   try {
     response = await api.get<BackendWeatherResponse>('/weather/', {
-      params: { city },
+      params: { city: place.city || undefined, lat: place.lat, lon: place.lon },
     });
   } catch (error) {
     throw toReadableWeatherError(error);
   }
 
   const payload = parseJsonData<BackendWeatherResponse>(response.data);
+  const city = place.city || '';
 
   const current = payload.current || {};
   const temp = Number(current.temp ?? NaN);
@@ -157,6 +177,10 @@ export async function fetchWeatherByCity(city: string) {
     hourly,
     daily,
     updatedAt: new Date().toLocaleTimeString(),
+    alerts: Array.isArray(payload.alerts) ? payload.alerts : [],
+    visibilityM: Number.isFinite(Number(current.visibility)) ? Number(current.visibility) : undefined,
+    pressure: Number.isFinite(Number(current.pressure)) ? Number(current.pressure) : undefined,
+    fromGps: payload.source === 'gps',
   } satisfies WeatherSnapshot;
 }
 
@@ -247,4 +271,11 @@ function toIsoDateFromSeconds(seconds: number) {
   } catch {
     return '';
   }
+}
+
+/** Temperatures come in °C; the profile can ask for °F. */
+export function formatTemperature(celsius: number | undefined, unit: 'C' | 'F' = 'C', withUnit = true) {
+  if (!Number.isFinite(celsius)) return '--';
+  const value = unit === 'F' ? (Number(celsius) * 9) / 5 + 32 : Number(celsius);
+  return `${Math.round(value)}°${withUnit ? unit : ''}`;
 }

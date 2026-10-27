@@ -1,318 +1,140 @@
-import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  Pressable,
-  ScrollView,
-  Alert,
-} from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors, Radius, Shadows } from '../constants/theme';
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { Ionicons } from '@expo/vector-icons';
 
-interface AdhanOption {
-  id: string;
-  label: string;
-  description: string;
-}
+import { Colors, Font, Radius } from '../constants/theme';
+import { ADHAN_ENABLED_KEY, ADHAN_KEY, ADHAN_OPTIONS, loadAdhanSettings, type AdhanId } from '../constants/adhan';
+import {
+  PRAYER_NAMES,
+  loadPrayerAlerts,
+  resyncPrayerReminders,
+  savePrayerAlerts,
+  type PrayerAlerts,
+  type PrayerName,
+} from '../services/prayerService';
+import { Card, ModuleHeader, ToggleRow, moduleStyles } from '../components/module/ModuleUI';
 
 export function AdhanSettingsScreen() {
-  const navigation = useNavigation();
-  const [selectedAdhan, setSelectedAdhan] = useState('adhan_makkah');
-  const [adhanEnabled, setAdhanEnabled] = useState(false);
-
-  const adhanOptions: AdhanOption[] = [
-    { id: 'adhan_makkah', label: 'Makkah Adhan', description: 'Classic Adhan from Masjid al-Haram' },
-    { id: 'adhan_madinah', label: 'Madinah Adhan', description: 'Adhan from Masjid an-Nabawi' },
-    { id: 'adhan_aqsa', label: 'Al-Aqsa Adhan', description: 'Adhan from Masjid al-Aqsa' },
-    { id: 'adhan_egypt', label: 'Egyptian Adhan', description: 'Traditional Egyptian style Adhan' },
-    { id: 'default', label: 'Default Sound', description: 'Default notification sound' },
-  ];
+  const [selected, setSelected] = useState<AdhanId>('adhan_makkah');
+  const [enabled, setEnabled] = useState(false);
+  const [alerts, setAlerts] = useState<PrayerAlerts | null>(null);
+  const [previewing, setPreviewing] = useState<AdhanId | null>(null);
+  const player = useRef<AudioPlayer | null>(null);
 
   useEffect(() => {
-    loadSavedPreferences();
+    loadAdhanSettings().then((s) => {
+      setSelected(s.id);
+      setEnabled(s.enabled);
+    });
+    loadPrayerAlerts().then(setAlerts);
+    return () => player.current?.remove();
   }, []);
 
-  const loadSavedPreferences = async () => {
-    try {
-      const savedAdhan = await AsyncStorage.getItem('selected_adhan');
-      if (savedAdhan) {
-        setSelectedAdhan(savedAdhan);
-      }
-      
-      const adhanEnabled = await AsyncStorage.getItem('adhan_enabled');
-      setAdhanEnabled(adhanEnabled === 'true');
-    } catch (error) {
-      console.log('Error loading Adhan preferences:', error);
-    }
+  const stopPreview = () => {
+    player.current?.pause();
+    player.current?.remove();
+    player.current = null;
+    setPreviewing(null);
   };
 
-  const toggleAdhanEnabled = async () => {
-    const newValue = !adhanEnabled;
-    setAdhanEnabled(newValue);
-    try {
-      await AsyncStorage.setItem('adhan_enabled', newValue.toString());
-    } catch (error) {
-      console.log('Error saving Adhan enabled preference:', error);
-    }
+  const preview = (id: AdhanId, url: string | null) => {
+    if (previewing === id) return stopPreview();
+    stopPreview();
+    if (!url) return;
+    const sound = createAudioPlayer({ uri: url });
+    player.current = sound;
+    sound.addListener('playbackStatusUpdate', (status) => {
+      if (status.didJustFinish) setPreviewing(null);
+    });
+    sound.play();
+    setPreviewing(id);
   };
 
-  const handleAdhanSelection = async (adhanId: string) => {
-    setSelectedAdhan(adhanId);
-    try {
-      await AsyncStorage.setItem('selected_adhan', adhanId);
-    } catch (error) {
-      console.log('Error saving Adhan preference:', error);
-    }
+  const choose = async (id: AdhanId) => {
+    setSelected(id);
+    await AsyncStorage.setItem(ADHAN_KEY, id);
   };
 
-  const handleSave = async () => {
-    try {
-      await AsyncStorage.setItem('selected_adhan', selectedAdhan);
-      Alert.alert(
-        'Success',
-        'Adhan preference saved! This will be used for your next prayer notification.',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-    } catch (error) {
-      console.log('Error saving Adhan preference:', error);
-      Alert.alert('Error', 'Failed to save Adhan preference. Please try again.');
-    }
+  const toggleEnabled = async (value: boolean) => {
+    setEnabled(value);
+    await AsyncStorage.setItem(ADHAN_ENABLED_KEY, String(value));
+  };
+
+  const toggleAlert = async (name: PrayerName, value: boolean) => {
+    if (!alerts) return;
+    const next = { ...alerts, [name]: value };
+    setAlerts(next);
+    await savePrayerAlerts(next);
+    resyncPrayerReminders();
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Back Button */}
-      <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Back</Text>
-      </Pressable>
+    <SafeAreaView style={moduleStyles.container}>
+      <ModuleHeader title="Adhan Settings" subtitle="Sound and prayer alerts." />
+      <ScrollView contentContainerStyle={moduleStyles.content}>
+        <Card title="Prayer alerts">
+          {PRAYER_NAMES.map((name) => (
+            <ToggleRow
+              key={name}
+              title={name}
+              meta="Notification at the start of the prayer"
+              value={alerts?.[name] ?? true}
+              onValueChange={(v) => toggleAlert(name, v)}
+            />
+          ))}
+          <Text style={moduleStyles.muted}>All prayer alerts can be switched off in Profile → Notifications.</Text>
+        </Card>
 
-      {/* Title */}
-      <Text style={styles.title}>Adhan Settings</Text>
-      <Text style={styles.subtitle}>Choose your preferred Adhan sound for prayer notifications</Text>
-
-      {/* Adhan Enable Toggle */}
-      <View style={styles.toggleContainer}>
-        <View style={styles.toggleInfo}>
-          <Text style={styles.toggleLabel}>Play Adhan at prayer times</Text>
-          <Text style={styles.toggleDescription}>Automatically play Adhan audio when prayer time begins</Text>
-        </View>
-        <Pressable 
-          style={[styles.toggleButton, adhanEnabled && styles.toggleButtonActive]} 
-          onPress={toggleAdhanEnabled}
-        >
-          <View style={[styles.toggleKnob, adhanEnabled && styles.toggleKnobActive]} />
-        </Pressable>
-      </View>
-
-      {/* Adhan Options */}
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {adhanOptions.map((option) => (
-          <Pressable
-            key={option.id}
-            style={[
-              styles.adhanCard,
-              selectedAdhan === option.id && styles.selectedCard,
-            ]}
-            onPress={() => handleAdhanSelection(option.id)}
-          >
-            <View style={styles.adhanInfo}>
-              <Text style={styles.mosqueEmoji}>🕌</Text>
-              <View style={styles.textContainer}>
-                <Text style={styles.adhanLabel}>{option.label}</Text>
-                <Text style={styles.adhanDescription}>{option.description}</Text>
-              </View>
-            </View>
-            <View style={styles.radioContainer}>
-              <View style={[
-                styles.radioButton,
-                selectedAdhan === option.id && styles.radioSelected,
-              ]}>
-                {selectedAdhan === option.id && (
-                  <View style={styles.radioInner} />
-                )}
-              </View>
-            </View>
-          </Pressable>
-        ))}
+        <Card title="Adhan">
+          <ToggleRow
+            title="Play Adhan in the app"
+            meta="Plays the chosen Adhan when a prayer starts while the app is open"
+            value={enabled}
+            onValueChange={toggleEnabled}
+          />
+          {ADHAN_OPTIONS.map((option) => {
+            const active = selected === option.id;
+            return (
+              <Pressable key={option.id} style={[styles.option, active && styles.optionActive]} onPress={() => choose(option.id)}>
+                <View style={[styles.radio, active && styles.radioActive]}>{active ? <View style={styles.radioDot} /> : null}</View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>{option.label}</Text>
+                  <Text style={moduleStyles.muted}>{option.description}</Text>
+                </View>
+                {option.url ? (
+                  <Pressable onPress={() => preview(option.id, option.url)} hitSlop={10} accessibilityLabel={`Preview ${option.label}`}>
+                    <Ionicons name={previewing === option.id ? 'stop-circle' : 'play-circle'} size={30} color={Colors.primary} />
+                  </Pressable>
+                ) : null}
+              </Pressable>
+            );
+          })}
+          <Text style={moduleStyles.muted}>
+            Notifications use the phone alert tone; the Adhan audio plays inside the app.
+          </Text>
+        </Card>
       </ScrollView>
-
-      {/* Save Button */}
-      <View style={styles.saveButtonContainer}>
-        <Pressable style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Adhan Preference</Text>
-        </Pressable>
-      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgLight,
-    paddingTop: 40,
-  },
-  toggleContainer: {
+  option: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 16,
-    marginBottom: 16,
-    ...Shadows.card,
-  },
-  toggleInfo: {
-    flex: 1,
-  },
-  toggleLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  toggleDescription: {
-    fontSize: 14,
-    color: '#6b7280',
-    lineHeight: 18,
-  },
-  toggleButton: {
-    width: 48,
-    height: 28,
-    backgroundColor: '#d1d5db',
-    borderRadius: 14,
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  toggleButtonActive: {
-    backgroundColor: Colors.primary,
-    ...Shadows.button,
-  },
-  toggleKnob: {
-    width: 20,
-    height: 20,
-    backgroundColor: Colors.white,
-    borderRadius: 10,
-    shadowColor: Colors.textPrimary,
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  toggleKnobActive: {
-    alignSelf: 'flex-end',
-  },
-  backButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  backText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-    letterSpacing: -0.3,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    paddingHorizontal: 32,
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  scrollView: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  adhanCard: {
-    backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    ...Shadows.card,
-  },
-  selectedCard: {
-    backgroundColor: '#dcfce7',
-    borderColor: Colors.primary,
-  },
-  adhanInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  mosqueEmoji: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  textContainer: {
-    flex: 1,
-  },
-  adhanLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  adhanDescription: {
-    fontSize: 14,
-    color: '#6b7280',
-    lineHeight: 18,
-  },
-  radioContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radioButton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#d1d5db',
-    backgroundColor: Colors.white,
-  },
-  radioSelected: {
-    borderColor: Colors.primary,
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.primary,
-  },
-  saveButtonContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    paddingTop: 8,
-  },
-  saveButton: {
-    backgroundColor: Colors.primary,
+    gap: 12,
+    padding: 12,
     borderRadius: Radius.md,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.button,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    backgroundColor: Colors.surfaceLight,
   },
-  saveButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
+  optionActive: { borderColor: Colors.primary, backgroundColor: Colors.primarySurface },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: Colors.borderLight, alignItems: 'center', justifyContent: 'center' },
+  radioActive: { borderColor: Colors.primary },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary },
+  label: { fontFamily: Font.bold, fontSize: 15, color: Colors.textPrimary },
 });

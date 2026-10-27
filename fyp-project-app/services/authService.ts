@@ -1,6 +1,18 @@
 import { api, parseJsonData } from './api';
 import { supabase } from './supabase';
 
+export type Preferences = {
+  temperature_unit: 'C' | 'F';
+  notify_tasks: boolean;
+  notify_habits: boolean;
+  notify_medication: boolean;
+  notify_prayer: boolean;
+  notify_weather_alerts: boolean;
+  prayer_method: number;
+  prayer_school: number;
+  community_visible: boolean;
+};
+
 export type AuthPayload = {
   email: string;
   user_id: string;
@@ -8,6 +20,9 @@ export type AuthPayload = {
   avatar_url: string;
   bio: string;
   selected_city: string;
+  timezone?: string;
+  preferences?: Preferences;
+  member_since?: string;
 };
 
 export type ProfilePayload = {
@@ -15,10 +30,16 @@ export type ProfilePayload = {
   avatar_url: string;
   bio: string;
   selected_city: string;
+  timezone?: string;
+  preferences?: Preferences;
+  email?: string;
+  member_since?: string;
 };
 
-type UpdateProfileInput = Partial<ProfilePayload> & {
+type UpdateProfileInput = Partial<Omit<ProfilePayload, 'preferences' | 'email' | 'member_since'>> & {
   avatar_image_uri?: string;
+  preferences?: Partial<Preferences>;
+  remove_avatar?: boolean;
 };
 
 export async function me(): Promise<AuthPayload> {

@@ -8,12 +8,19 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from accounts.models import UserProfile
+from accounts.serializers import merged_preferences
+from accounts.timezones import user_now, user_tz
 from budget.models import BudgetSettings, BudgetTransaction, CategoryBudget
 from fitness.models import FitnessGoal, FitnessRecord, WaterIntake
 from habits.models import Habit
 from habits.services import complete_habit as complete_habit_streak
+from community import services as community_services
+from community.models import Post
+from medications import services as med_services
 from medications.models import Medication, MedicationLog
+from prayer import services as prayer_services
 from tasks.models import Task
+from weather import services as weather_services
 
 
 @dataclass
@@ -94,9 +101,12 @@ def create_task(ctx, title, description='', priority='medium', deadline=None, ca
 def update_task(ctx, task, status=None, title=None, priority=None, deadline=None):
     t = _find(Task.objects.filter(user=ctx.user), task, 'title')
     if status:
-        t.status = status
-        if status == Task.STATUS_DONE:
+        if status == Task.STATUS_DONE and t.status != Task.STATUS_DONE:
             t.progress_percentage = 100
+            t.completed_at = timezone.now()
+        elif status != Task.STATUS_DONE:
+            t.completed_at = None
+        t.status = status
     if title:
         t.title = title[:255]
     if priority:
@@ -116,27 +126,42 @@ def delete_task(ctx, task):
 
 # ---------------------------------------------------------------- medications
 def get_medications_today(ctx):
-    """Active medications with their schedule and what has been logged today."""
-    today = timezone.localdate()
-    meds = Medication.objects.filter(user=ctx.user, is_active=True)
-    logs = MedicationLog.objects.filter(user=ctx.user, scheduled_time__date=today)
+    """Active medications with their schedule, what has been logged today and the next dose."""
+    now = user_now(ctx.user)
+    today = now.date()
+    slots = med_services.day_schedule(ctx.user, today, now)
     by_med = {}
-    for log in logs:
+    for slot in slots:
+        if slot['log_id']:
+            by_med.setdefault(slot['medication_id'], []).append(
+                {'status': slot['status'], 'scheduled_time': slot['scheduled_at']})
+    start = datetime.datetime(today.year, today.month, today.day, tzinfo=user_tz(ctx.user))
+    for log in MedicationLog.objects.filter(user=ctx.user, dose_time='', scheduled_time__gte=start,
+                                            scheduled_time__lt=start + datetime.timedelta(days=1)):
         by_med.setdefault(log.medication_id, []).append(
-            {'status': log.status, 'scheduled_time': log.scheduled_time.isoformat()}
-        )
+            {'status': log.status, 'scheduled_time': log.scheduled_time.isoformat(), 'as_needed': True})
+    meds = Medication.objects.filter(user=ctx.user, is_active=True)
     return {
         'date': today.isoformat(),
         'medications': [
             {
                 'id': m.id, 'name': m.name, 'dosage': m.dosage, 'frequency': m.frequency,
-                'schedule_times': m.schedule_times, 'notes': m.notes or '',
+                'schedule_times': m.schedule_times, 'notes': m.notes or '', 'instructions': m.instructions,
                 'supply_count': m.supply_count, 'refill_threshold': m.refill_threshold,
-                'logged_today': by_med.get(m.id, []),
+                'needs_refill': m.needs_refill, 'logged_today': by_med.get(m.id, []),
             }
             for m in meds
         ],
+        'schedule_today': [{'name': s['name'], 'time': s['time'], 'status': s['status']} for s in slots],
+        'next_dose': med_services.next_dose(ctx.user, now),
     }
+
+
+def get_next_dose(ctx):
+    dose = med_services.next_dose(ctx.user)
+    if not dose:
+        return {'next_dose': None, 'note': 'No scheduled doses in the coming week.'}
+    return {'next_dose': {k: dose[k] for k in ('name', 'dosage', 'time', 'date', 'status', 'instructions')}}
 
 
 def add_medication(ctx, name, dosage, schedule_times, frequency='daily', notes=''):
@@ -148,22 +173,110 @@ def add_medication(ctx, name, dosage, schedule_times, frequency='daily', notes='
                         'frequency': med.frequency, 'schedule_times': med.schedule_times}}
 
 
-def log_medication(ctx, medication, status='taken'):
+def log_medication(ctx, medication, status='taken', dose_time=None):
+    """Log a dose. Without dose_time it answers the open scheduled dose closest to now, or an
+    as-needed dose when nothing is scheduled today."""
     med = _find(Medication.objects.filter(user=ctx.user, is_active=True), medication, 'name')
-    now = timezone.now()
-    MedicationLog.objects.create(
-        user=ctx.user, medication=med, status=status, scheduled_time=now,
-        taken_at=now if status == 'taken' else None,
+    if dose_time is None:
+        now = user_now(ctx.user)
+        open_slots = [s for s in med_services.day_schedule(ctx.user, now.date(), now)
+                      if s['medication_id'] == med.id and not s['log_id']]
+        nearest = min(open_slots, key=lambda s: abs(datetime.datetime.fromisoformat(s['scheduled_at']) - now),
+                      default=None)
+        dose_time = nearest['time'] if nearest else ''
+    try:
+        log = med_services.log_dose(ctx.user, med, status=status, dose_time=dose_time)
+    except med_services.DoseError as exc:
+        raise ToolError(str(exc))
+    med.refresh_from_db()
+    return {'logged': {'medication': med.name, 'status': status, 'dose_time': log.dose_time or 'as needed',
+                       'supply_left': med.supply_count, 'needs_refill': med.needs_refill}}
+
+
+# ---------------------------------------------------------------- weather & prayer times
+def _profile_city(ctx, city):
+    city = (city or '').strip()
+    if city:
+        return city
+    profile, _ = UserProfile.objects.get_or_create(user=ctx.user)
+    if not profile.selected_city:
+        raise ToolError('No city given and none saved in the profile. Ask the user which city.')
+    return profile.selected_city
+
+
+def _describe(entry):
+    return ((entry.get('weather') or [{}])[0] or {}).get('description', '')
+
+
+def get_weather(ctx, city=None):
+    city = _profile_city(ctx, city)
+    try:
+        data = weather_services.lookup(city=city)
+    except weather_services.WeatherAdapterError as exc:
+        raise ToolError(str(exc))
+    tz = user_tz(ctx.user)
+    current = data.get('current') or {}
+    return {
+        'city': data.get('city') or city,
+        'now': {'temp_c': current.get('temp'), 'feels_like_c': current.get('feels_like'),
+                'humidity': current.get('humidity'), 'conditions': _describe(current),
+                'wind_kmh': round((current.get('wind_speed') or 0) * 3.6)},
+        'next_hours': [
+            {'time': datetime.datetime.fromtimestamp(h['dt'], tz).strftime('%H:%M'), 'temp_c': h.get('temp'),
+             'rain_chance': round((h.get('pop') or 0) * 100), 'conditions': _describe(h)}
+            for h in (data.get('hourly') or [])[:4] if h.get('dt')
+        ],
+        'next_days': [
+            {'date': datetime.datetime.fromtimestamp(d['date'], tz).date().isoformat(), 'min_c': d.get('temp_min'),
+             'max_c': d.get('temp_max'), 'rain_chance': round((d.get('pop') or 0) * 100)}
+            for d in (data.get('daily') or [])[:4] if d.get('date')
+        ],
+        'alerts': [{'title': a['title'], 'message': a['message']} for a in data.get('alerts', [])],
+    }
+
+
+def get_prayer_times(ctx, city=None, date=None):
+    city = _profile_city(ctx, city)
+    day = _date(date) or user_now(ctx.user).date()
+    profile, _ = UserProfile.objects.get_or_create(user=ctx.user)
+    prefs = merged_preferences(profile.preferences)
+    try:
+        entry = prayer_services.get_day(day, address=city, method=prefs['prayer_method'],
+                                        school=prefs['prayer_school'])
+    except prayer_services.PrayerError as exc:
+        raise ToolError(str(exc))
+    hijri = entry['hijri']
+    return {
+        'city': city, 'date': entry['date'], 'times': entry['times'],
+        'hijri_date': f"{hijri['day']} {hijri['month_name']} {hijri['year']} AH",
+        'is_ramadan': entry['is_ramadan'],
+        'sehri_ends': entry['times']['Imsak'] if entry['is_ramadan'] else None,
+        'iftar': entry['times']['Maghrib'] if entry['is_ramadan'] else None,
+        'next_prayer': prayer_services.next_prayer([entry], timezone.now()),
+    }
+
+
+# ---------------------------------------------------------------- community
+def share_streak(ctx, habit=None, message=''):
+    today = user_now(ctx.user).date()
+    if habit:
+        h = _find(Habit.objects.filter(user_id=ctx.user_id), habit, 'name')
+        streak = community_services.live_streak(h, today)
+    else:
+        streak, h = community_services.best_live_habit(ctx.user)
+    if not h or streak <= 0:
+        raise ToolError('There is no running habit streak to share. A habit must be done today or yesterday.')
+    post = Post.objects.create(
+        author=ctx.user, kind=Post.KIND_HABIT_STREAK,
+        meta={'habit': h.name, 'streak': streak, 'best_streak': h.best_streak, 'category': h.category},
+        content=(message or '').strip()[:1000] or f'{streak}-day streak on "{h.name}"!',
     )
-    if status == 'taken' and med.supply_count > 0:
-        med.supply_count -= 1
-        med.save(update_fields=['supply_count'])
-    return {'logged': {'medication': med.name, 'status': status}}
+    return {'shared': {'habit': h.name, 'streak': streak, 'post_id': post.id}}
 
 
 # ---------------------------------------------------------------- habits
 def list_habits(ctx):
-    today = timezone.localdate()
+    today = user_now(ctx.user).date()
     return {'habits': [
         {'id': h.id, 'name': h.name, 'frequency': h.frequency, 'category': h.category,
          'streak': h.streak_count, 'best_streak': h.best_streak,
@@ -179,7 +292,7 @@ def create_habit(ctx, name, frequency='Daily', category='Other'):
 
 def complete_habit(ctx, habit):
     h = _find(Habit.objects.filter(user_id=ctx.user_id), habit, 'name')
-    complete_habit_streak(h, timezone.localdate())
+    complete_habit_streak(h, user_now(ctx.user).date())
     return {'completed': {'name': h.name, 'streak': h.streak_count, 'best_streak': h.best_streak}}
 
 
@@ -307,10 +420,23 @@ REGISTRY = {
                       'enum': ['daily', 'twice_daily', 'three_times_daily', 'weekly', 'as_needed']},
         'notes': _S,
     }, ['name', 'dosage', 'schedule_times']), add_medication, 'medications'),
-    'log_medication': (_tool('log_medication', 'Record that a dose was taken or skipped just now.', {
+    'log_medication': (_tool('log_medication', 'Record that a dose was taken or skipped. Without dose_time the '
+                             'open scheduled dose closest to now is used.', {
         'medication': {'type': 'string', 'description': 'id or name'},
         'status': {'type': 'string', 'enum': ['taken', 'skipped']},
+        'dose_time': {'type': 'string', 'description': 'Scheduled slot as HH:MM, e.g. "08:00"'},
     }, ['medication']), log_medication, 'medications'),
+    'get_next_dose': (_tool('get_next_dose', "The user's next scheduled medication dose (name, dosage, time)."),
+                      get_next_dose, 'medications'),
+    'get_weather': (_tool('get_weather', 'Current weather, next hours, next days and severe weather alerts. '
+                          'Without city the city from the user profile is used.', {'city': _S}),
+                    get_weather, 'weather'),
+    'get_prayer_times': (_tool('get_prayer_times', 'The five daily prayer times, Hijri date, Ramadan Sehri/Iftar '
+                               'and the next prayer for a city (default: profile city).',
+                               {'city': _S, 'date': _ISO}), get_prayer_times, 'prayer'),
+    'share_streak': (_tool('share_streak', "Share one of the user's habit streaks as a post in the Community "
+                           "feed. Only when the user asked to share. `habit` is its name; default is the "
+                           "longest running streak.", {'habit': _S, 'message': _S}), share_streak, 'community'),
     'list_habits': (_tool('list_habits', "List the user's habits with streaks and whether done today."),
                     list_habits, 'habits'),
     'create_habit': (_tool('create_habit', 'Create a new habit.', {
@@ -340,7 +466,8 @@ REGISTRY = {
 }
 
 # Tools that only read; the app does not need to refresh after them.
-READ_ONLY = {'list_tasks', 'get_medications_today', 'list_habits', 'get_budget_summary', 'get_fitness_today'}
+READ_ONLY = {'list_tasks', 'get_medications_today', 'list_habits', 'get_budget_summary', 'get_fitness_today',
+             'get_next_dose', 'get_weather', 'get_prayer_times'}
 
 TOOL_DEFINITIONS = [entry[0] for entry in REGISTRY.values()]
 

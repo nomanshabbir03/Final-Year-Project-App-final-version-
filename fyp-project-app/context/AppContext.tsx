@@ -1,52 +1,37 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { Colors } from '../constants/theme';
 import {
   completeHabit as completeHabitRequest,
   createHabit as createHabitRequest,
   deleteHabit as deleteHabitRequest,
   getHabits as getHabitsRequest,
+  saveHabit as saveHabitRequest,
+  uncompleteHabit as uncompleteHabitRequest,
   updateHabit as updateHabitRequest,
+  type HabitDto,
   type HabitFrequency,
-  type HabitCategory,
+  type HabitInput,
 } from '../services/habitService';
 import { toApiErrorMessage } from '../services/api';
 import {
   createTask as createTaskRequest,
   deleteTask as deleteTaskRequest,
+  getTask as getTaskRequest,
+  getTaskReport as getTaskReportRequest,
   getTasks as getTasksRequest,
+  logTaskTime,
+  sendTaskReminderEmail,
+  toggleTask as toggleTaskRequest,
+  updateTask as updateTaskRequest,
+  type Task,
+  type TaskFilters,
+  type TaskInput,
+  type TaskReport,
 } from '../services/taskService';
+import { syncHabitReminders, syncTaskReminders } from '../services/reminderService';
 
-export type Task = {
-  id: string;
-  title: string;
-  description: string;
-  category?: string;
-  priority: 'high' | 'medium' | 'low';
-  status: 'pending' | 'in_progress' | 'done';
-  deadline?: string | null | undefined;
-  done?: boolean;
-  reminder_time?: string | null;
-  time_slot_start?: string | null;
-  time_slot_end?: string | null;
-  links?: string[];
-  time_spent_seconds?: number;
-  progress_percentage?: number;
-  email_reminder_enabled?: boolean;
-  attachments?: any[];
-  created_at?: string;
-  updated_at?: string;
-};
+export type { Task, TaskInput, TaskFilters, TaskReport };
 
-export type Habit = {
-  id: string;
-  name: string;
-  frequency: HabitFrequency;
-  category: HabitCategory;
-  streakCount: number;
-  bestStreak: number;
-  lastCompletedDate: string | null;
-  reminderTime: string | null;
-};
+export type Habit = HabitDto;
 
 type WeatherSnapshot = {
   city: string;
@@ -66,26 +51,27 @@ type AppContextValue = {
   fetchTasks: (force?: boolean) => Promise<void>;
   fetchHabits: (force?: boolean) => Promise<void>;
   preloadDashboardData: () => Promise<void>;
-  addTask: (input: {
-    title: string;
-    description: string;
-    priority: Task['priority'];
-    deadline: string;
-  }) => Promise<boolean>;
-  addHabit: (input: { name: string; frequency: HabitFrequency; category: HabitCategory }) => Promise<boolean>;
+  addTask: (input: TaskInput) => Promise<Task | null>;
+  addHabit: (input: HabitInput & { name: string }) => Promise<Habit | null>;
+  saveHabit: (id: string, input: HabitInput) => Promise<Habit | null>;
+  /** Check a habit in (or undo it) for today or one of the last 7 days. */
+  setHabitDone: (id: string, done: boolean, date?: string) => Promise<void>;
+  replaceHabit: (habit: Habit) => void;
   updateHabit: (id: string, name: string, frequency: HabitFrequency, reminderTime?: string) => Promise<boolean>;
   deleteHabit: (id: string) => Promise<void>;
-  deleteTask: (id: string) => Promise<void>;
-  toggleTask: (id: string) => void;
+  deleteTask: (id: string) => Promise<boolean>;
+  toggleTask: (id: string) => Promise<void>;
+  /** Toggles today's check-in. */
   completeHabit: (id: string) => Promise<void>;
   setWeather: (value: WeatherSnapshot) => void;
-  // New task functions
   getTask: (id: string) => Promise<Task>;
-  updateTask: (id: string, data: Partial<Task>) => Promise<Task>;
-  logTime: (taskId: string, seconds: number) => Promise<any>;
-  sendReminderEmail: (taskId: string) => Promise<any>;
-  getTaskReport: (period: 'daily' | 'weekly' | 'monthly') => Promise<any>;
-  searchTasks: (query: string, filters?: any) => Promise<Task[]>;
+  updateTask: (id: string, data: TaskInput) => Promise<Task>;
+  /** Replaces a task in the shared list after a screen changed it directly (e.g. attachments). */
+  replaceTask: (task: Task) => void;
+  logTime: (taskId: string, seconds: number) => Promise<Task>;
+  sendReminderEmail: (taskId: string) => Promise<string>;
+  getTaskReport: (period: 'daily' | 'weekly' | 'monthly') => Promise<TaskReport>;
+  searchTasks: (query: string, filters?: TaskFilters) => Promise<Task[]>;
   getTasksByPriority: (priority: string) => Promise<Task[]>;
   getTasksByStatus: (status: string) => Promise<Task[]>;
   getTasksByCategory: (category: string) => Promise<Task[]>;
@@ -123,9 +109,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const remoteTasks = await getTasksRequest();
-        setTasks(remoteTasks as unknown as Task[]);
-        tasksRef.current = remoteTasks as unknown as Task[];
+        setTasks(remoteTasks);
+        tasksRef.current = remoteTasks;
         tasksLastFetchedAtRef.current = Date.now();
+        syncTaskReminders(remoteTasks);
       } catch (error) {
         console.warn('Failed to fetch tasks from backend', error);
         setTasksError(toApiErrorMessage(error, 'Could not load tasks from server.'));
@@ -157,6 +144,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setHabits(remoteHabits);
         habitsRef.current = remoteHabits;
         habitsLastFetchedAtRef.current = Date.now();
+        syncHabitReminders(remoteHabits);
       } catch (error) {
         console.warn('Failed to fetch habits from backend', error);
         setHabitsError(toApiErrorMessage(error, 'Could not load habits from server.'));
@@ -174,103 +162,125 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await Promise.all([fetchTasks(true), fetchHabits(true)]);
   }, [fetchHabits, fetchTasks]);
 
-  const addTask = useCallback(async (input: {
-    title: string;
-    description: string;
-    priority: Task['priority'];
-    deadline: string | null;
-  }) => {
-    const clean = input.title.trim();
+  // Every task change goes through here so the shared list, the ref and the reminders stay in sync.
+  const commitTasks = useCallback((update: (prev: Task[]) => Task[]) => {
+    const next = update(tasksRef.current);
+    tasksRef.current = next;
+    setTasks(next);
+    syncTaskReminders(next);
+  }, []);
+
+  const replaceTask = useCallback(
+    (task: Task) => commitTasks((prev) => prev.map((t) => (t.id === task.id ? task : t))),
+    [commitTasks]
+  );
+
+  const addTask = useCallback(async (input: TaskInput) => {
+    const clean = input.title?.trim();
     if (!clean) {
       setTasksError('Title is required.');
-      return false;
+      return null;
     }
 
-    setTasksLoading(true);
     setTasksError(null);
-
     try {
-      const created = await createTaskRequest({
-        title: clean,
-        description: input.description.trim(),
-        priority: input.priority,
-        deadline: input.deadline || '',
-      });
-      setTasks((prev) => [created as unknown as Task, ...prev]);
-      return true;
+      const created = await createTaskRequest({ ...input, title: clean });
+      commitTasks((prev) => [created, ...prev]);
+      return created;
     } catch (error) {
-      console.log('Backend error response:', error.response?.data);
       console.warn('Failed to create task in backend', error);
       setTasksError(toApiErrorMessage(error, 'Could not create task. Please try again.'));
-      return false;
-    } finally {
-      setTasksLoading(false);
+      return null;
     }
-  }, [fetchTasks]);
+  }, [commitTasks]);
 
-  const addHabit = useCallback(async (input: { name: string; frequency: HabitFrequency; category: HabitCategory }) => {
-    const clean = input.name.trim();
-    if (!clean) {
+  const commitHabits = useCallback((update: (prev: Habit[]) => Habit[]) => {
+    const next = update(habitsRef.current);
+    habitsRef.current = next;
+    setHabits(next);
+    syncHabitReminders(next);
+  }, []);
+
+  const replaceHabit = useCallback(
+    (habit: Habit) =>
+      commitHabits((prev) =>
+        habit.isArchived ? prev.filter((h) => h.id !== habit.id) : prev.some((h) => h.id === habit.id) ? prev.map((h) => (h.id === habit.id ? habit : h)) : [habit, ...prev]
+      ),
+    [commitHabits]
+  );
+
+  const addHabit = useCallback(async (input: HabitInput & { name: string }) => {
+    if (!input.name.trim()) {
       setHabitsError('Habit name is required.');
-      return false;
+      return null;
     }
-
-    setHabitsLoading(true);
     setHabitsError(null);
-
     try {
-      const created = await createHabitRequest({
-        name: clean,
-        frequency: input.frequency,
-        category: input.category,
-      });
-      setHabits((prev) => [created, ...prev]);
-      await fetchHabits(true);
-      return true;
+      const created = await createHabitRequest({ ...input, name: input.name.trim() });
+      commitHabits((prev) => [created, ...prev]);
+      return created;
     } catch (error) {
       console.warn('Failed to create habit in backend', error);
       setHabitsError(toApiErrorMessage(error, 'Could not create habit. Please try again.'));
-      return false;
-    } finally {
-      setHabitsLoading(false);
+      return null;
     }
-  }, [fetchHabits]);
+  }, [commitHabits]);
+
+  const saveHabit = useCallback(async (id: string, input: HabitInput) => {
+    setHabitsError(null);
+    try {
+      const updated = await saveHabitRequest(id, input);
+      replaceHabit(updated);
+      return updated;
+    } catch (error) {
+      setHabitsError(toApiErrorMessage(error, 'Could not save the habit.'));
+      return null;
+    }
+  }, [replaceHabit]);
+
+  // Optimistic for today's check-in; the server's answer (streaks, counts) replaces it.
+  const setHabitDone = useCallback(async (id: string, done: boolean, date?: string) => {
+    const before = habitsRef.current.find((h) => h.id === id);
+    if (before && !date) replaceHabit({ ...before, doneToday: done });
+    try {
+      replaceHabit(done ? await completeHabitRequest(id, date) : await uncompleteHabitRequest(id, date));
+    } catch (error) {
+      if (before) replaceHabit(before);
+      setHabitsError(toApiErrorMessage(error, 'Could not update the habit.'));
+    }
+  }, [replaceHabit]);
 
   const deleteTask = useCallback(async (id: string) => {
-    setTasksLoading(true);
     setTasksError(null);
-
     try {
       await deleteTaskRequest(id);
-      setTasks((prev) => prev.filter((task) => task.id !== id));
+      commitTasks((prev) => prev.filter((task) => task.id !== id));
+      return true;
     } catch (error) {
       console.warn('Failed to delete task in backend', error);
       setTasksError(toApiErrorMessage(error, 'Could not delete task. Please try again.'));
-    } finally {
-      setTasksLoading(false);
+      return false;
     }
-  }, []);
+  }, [commitTasks]);
 
-  const toggleTask = useCallback((id: string) => {
-    setTasks((prev) =>
-      prev.map((task) => (task.id === id ? { ...task, done: !task.done } : task))
-    );
-  }, []);
+  // Optimistic: the checkbox flips at once and rolls back if the server rejects it.
+  const toggleTask = useCallback(async (id: string) => {
+    const before = tasksRef.current.find((t) => t.id === id);
+    if (!before) return;
+    const flipped: Task['status'] = before.done ? 'pending' : 'done';
+    replaceTask({ ...before, status: flipped, done: flipped === 'done' });
+    try {
+      replaceTask(await toggleTaskRequest(id));
+    } catch (error) {
+      replaceTask(before);
+      setTasksError(toApiErrorMessage(error, 'Could not update the task.'));
+    }
+  }, [replaceTask]);
 
   const completeHabit = useCallback(async (id: string) => {
-    setHabitsLoading(true);
-    setHabitsError(null);
-
-    try {
-      const updated = await completeHabitRequest(id);
-      setHabits((prev) => prev.map((habit) => (habit.id === id ? updated : habit)));
-    } catch (error) {
-      console.warn('Failed to complete habit in backend', error);
-      setHabitsError(toApiErrorMessage(error, 'Could not update habit streak. Please try again.'));
-    } finally {
-      setHabitsLoading(false);
-    }
-  }, []);
+    const habit = habitsRef.current.find((h) => h.id === id);
+    await setHabitDone(id, !habit?.doneToday);
+  }, [setHabitDone]);
 
 const updateHabit = useCallback(async (id: string, name: string, frequency: HabitFrequency, reminderTime?: string) => {
     setHabitsLoading(true);
@@ -278,7 +288,7 @@ const updateHabit = useCallback(async (id: string, name: string, frequency: Habi
 
     try {
       const updated = await updateHabitRequest(id, name, frequency, reminderTime);
-      setHabits((prev) => prev.map((habit) => (habit.id === id ? updated : habit)));
+      replaceHabit(updated);
       return true;
     } catch (error) {
       console.warn('Failed to update habit in backend', error);
@@ -287,7 +297,7 @@ const updateHabit = useCallback(async (id: string, name: string, frequency: Habi
     } finally {
       setHabitsLoading(false);
     }
-  }, []);
+  }, [replaceHabit]);
 
   const deleteHabit = useCallback(async (id: string) => {
     setHabitsLoading(true);
@@ -295,90 +305,55 @@ const updateHabit = useCallback(async (id: string, name: string, frequency: Habi
 
     try {
       await deleteHabitRequest(id);
-      setHabits((prev) => prev.filter((habit) => habit.id !== id));
+      commitHabits((prev) => prev.filter((habit) => habit.id !== id));
     } catch (error) {
       console.warn('Failed to delete habit in backend', error);
       setHabitsError(toApiErrorMessage(error, 'Could not delete habit. Please try again.'));
     } finally {
       setHabitsLoading(false);
     }
-  }, []);
+  }, [commitHabits]);
 
-  // New task functions - stubs for missing functions
   const getTask = useCallback(async (id: string) => {
-    // Stub implementation - function not available in taskService
-    const task = tasks.find(t => t.id === id);
-    if (!task) throw new Error('Task not found');
+    const task = await getTaskRequest(id);
+    if (tasksRef.current.some((t) => t.id === id)) {
+      replaceTask(task);
+    }
     return task;
-  }, [tasks]);
+  }, [replaceTask]);
 
-  const updateTask = useCallback(async (id: string, data: Partial<Task>) => {
-    // Stub implementation - function not available in taskService
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, ...data } : task)));
-    const updated = tasks.find(t => t.id === id);
-    if (!updated) throw new Error('Task not found');
-    return { ...updated, ...data };
-  }, [tasks]);
+  const updateTask = useCallback(async (id: string, data: TaskInput) => {
+    const updated = await updateTaskRequest(id, data);
+    replaceTask(updated);
+    return updated;
+  }, [replaceTask]);
 
   const logTime = useCallback(async (taskId: string, seconds: number) => {
-    // Stub implementation - function not available in taskService
-    console.log(`Logging ${seconds} seconds for task ${taskId}`);
-    return { success: true };
-  }, []);
+    const updated = await logTaskTime(taskId, seconds);
+    replaceTask(updated);
+    return updated;
+  }, [replaceTask]);
 
-  const sendReminderEmail = useCallback(async (taskId: string) => {
-    // Stub implementation - function not available in taskService
-    console.log(`Sending reminder email for task ${taskId}`);
-    return { success: true };
-  }, []);
+  const sendReminderEmail = useCallback((taskId: string) => sendTaskReminderEmail(taskId), []);
 
-  const getTaskReport = useCallback(async (period: 'daily' | 'weekly' | 'monthly') => {
-    // Stub implementation - function not available in taskService
-    const completed = tasks.filter(t => t.status === 'done').length;
-    const total = tasks.length;
-    return {
-      summary: {
-        total,
-        completed,
-        pending: tasks.filter(t => t.status === 'pending').length,
-        in_progress: tasks.filter(t => t.status === 'in_progress').length,
-      },
-      by_priority: {
-        high: { label: 'High', total: tasks.filter(t => t.priority === 'high').length, completed: tasks.filter(t => t.priority === 'high' && t.status === 'done').length, color: Colors.error },
-        medium: { label: 'Medium', total: tasks.filter(t => t.priority === 'medium').length, completed: tasks.filter(t => t.priority === 'medium' && t.status === 'done').length, color: Colors.warning },
-        low: { label: 'Low', total: tasks.filter(t => t.priority === 'low').length, completed: tasks.filter(t => t.priority === 'low' && t.status === 'done').length, color: Colors.success },
-      },
-      by_category: {},
-      chart_data: {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        completed: [2, 3, 1, 4, 2, 3, 1],
-        created: [3, 2, 4, 1, 3, 2, 2],
-      },
-    };
-  }, [tasks]);
+  const getTaskReport = useCallback((period: 'daily' | 'weekly' | 'monthly') => getTaskReportRequest(period), []);
 
-  const searchTasks = useCallback(async (query: string, filters = {}) => {
-    // Stub implementation - function not available in taskService
-    return tasks.filter(task => 
-      task.title.toLowerCase().includes(query.toLowerCase()) ||
-      task.description.toLowerCase().includes(query.toLowerCase())
-    );
-  }, [tasks]);
+  const searchTasks = useCallback(
+    (query: string, filters: TaskFilters = {}) => getTasksRequest({ ...filters, search: query }),
+    []
+  );
 
-  const getTasksByPriority = useCallback(async (priority: string) => {
-    // Stub implementation - function not available in taskService
-    return tasks.filter(t => t.priority === priority);
-  }, [tasks]);
+  const getTasksByPriority = useCallback(
+    (priority: string) => getTasksRequest({ priority: priority as Task['priority'] }),
+    []
+  );
 
-  const getTasksByStatus = useCallback(async (status: string) => {
-    // Stub implementation - function not available in taskService
-    return tasks.filter(t => t.status === status);
-  }, [tasks]);
+  const getTasksByStatus = useCallback(
+    (status: string) => getTasksRequest({ status: status as Task['status'] }),
+    []
+  );
 
-  const getTasksByCategory = useCallback(async (category: string) => {
-    // Stub implementation - function not available in taskService
-    return tasks.filter(t => t.category === category);
-  }, [tasks]);
+  const getTasksByCategory = useCallback((category: string) => getTasksRequest({ category }), []);
 
   const value = useMemo(
     () => ({
@@ -394,13 +369,16 @@ const updateHabit = useCallback(async (id: string, name: string, frequency: Habi
       preloadDashboardData,
       addTask,
       addHabit,
+      saveHabit,
+      setHabitDone,
+      replaceHabit,
       updateHabit,
       deleteHabit,
       deleteTask,
       toggleTask,
       completeHabit,
       setWeather,
-      // New task functions
+      replaceTask,
       getTask,
       updateTask,
       logTime,
@@ -424,12 +402,15 @@ const updateHabit = useCallback(async (id: string, name: string, frequency: Habi
       preloadDashboardData,
       addTask,
       addHabit,
+      saveHabit,
+      setHabitDone,
+      replaceHabit,
       updateHabit,
       deleteHabit,
       deleteTask,
       toggleTask,
       completeHabit,
-      // New task functions
+      replaceTask,
       getTask,
       updateTask,
       logTime,

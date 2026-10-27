@@ -20,6 +20,10 @@ class UserProfile(models.Model):
     email_confirmed = models.BooleanField(default=False)
     social_provider = models.CharField(max_length=20, blank=True)
     social_subject = models.CharField(max_length=255, blank=True, db_index=True)
+    # IANA name sent by the app (e.g. "Asia/Karachi"); dose schedules and "today" use it.
+    timezone = models.CharField(max_length=64, blank=True, default='')
+    # App preferences: units, notification switches, prayer method, community visibility...
+    preferences = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
         return f'{self.user.username} ({self.external_user_id})'

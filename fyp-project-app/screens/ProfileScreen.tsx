@@ -1,784 +1,306 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  Alert, 
-  Image, 
-  Pressable, 
-  ScrollView, 
-  StyleSheet, 
-  Text, 
-  View, 
-  RefreshControl,
-  Switch,
-  Platform,
-  SafeAreaView 
-} from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Image, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList, MainTabParamList } from '../navigation/types';
-import { CompositeNavigationProp } from '@react-navigation/native';
-import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { Notifications } from '../services/notifications';
-
-import { Colors, Radius, Shadows } from '../constants/theme';
-import { useAuth } from '../context/AuthContext';
-import { useAppContext } from '../context/AppContext';
-import { requestNotificationPermissions } from '../services/notificationService';
 import Constants from 'expo-constants';
 
-type ProfileScreenNavigationProp = CompositeNavigationProp<
-  BottomTabNavigationProp<MainTabParamList>,
-  NativeStackNavigationProp<RootStackParamList>
->;
+import { useAuth } from '../context/AuthContext';
+import { useAppContext } from '../context/AppContext';
+import { Colors, Font } from '../constants/theme';
+import type { RootStackParamList } from '../navigation/types';
+import type { Preferences } from '../services/authService';
+import { getProfileSummary, type ProfileSummary } from '../services/profileService';
+import { Notifications } from '../services/notifications';
+import { ensureNotificationPermission } from '../services/reminderService';
+import {
+  TEXT_SCALE,
+  getAppearance,
+  saveAppearance,
+  type AppearanceSettings,
+} from '../constants/appearance';
+import { formatTime12 } from '../services/medicationService';
+import {
+  Card,
+  EntryCard,
+  HeroCard,
+  HeroStat,
+  HeroStats,
+  ModuleHeader,
+  SecondaryButton,
+  SectionHeader,
+  Segmented,
+  ToggleRow,
+  moduleStyles,
+} from '../components/module/ModuleUI';
 
-interface ModuleStats {
-  tasksActive: number;
-  tasksDueToday: number;
-  habitsDaily: number;
-  habitNames: string[];
-  medicationsCount: number;
-  nextMedTime: string;
-  firstMedName: string;
-}
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+const DEFAULT_PREFS: Preferences = {
+  temperature_unit: 'C',
+  notify_tasks: true,
+  notify_habits: true,
+  notify_medication: true,
+  notify_prayer: true,
+  notify_weather_alerts: true,
+  prayer_method: 1,
+  prayer_school: 1,
+  community_visible: true,
+};
 
 export function ProfileScreen() {
-  const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { user, logout } = useAuth();
-  const { tasks, habits, fetchTasks, fetchHabits } = useAppContext();
-  
+  const navigation = useNavigation<Nav>();
+  const { user, logout, updateProfile } = useAuth();
+  const { fetchTasks } = useAppContext();
+  const [summary, setSummary] = useState<ProfileSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [notificationPermission, setNotificationPermission] = useState<boolean | null>(null);
-  const [appVersion] = useState(Constants.expoConfig?.version || '1.0.0');
-  const [moduleStats, setModuleStats] = useState<ModuleStats>({
-    tasksActive: 0,
-    tasksDueToday: 0,
-    habitsDaily: 0,
-    habitNames: [],
-    medicationsCount: 0,
-    nextMedTime: '',
-    firstMedName: '',
-  });
+  const [permission, setPermission] = useState<boolean | null>(null);
+  const prefs = { ...DEFAULT_PREFS, ...(user?.preferences ?? {}) };
 
-  // Calculate user statistics
-  const userStats = useMemo(() => {
-    if (!user) return { daysSinceJoin: 0, weeksSinceJoin: 0, memberSince: '' };
-    
-    const createdAt = new Date('2024-01-01'); // TODO: Use actual user.createdAt when available
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const weeksSinceJoin = Math.floor(diffDays / 7);
-    
-    return {
-      daysSinceJoin: diffDays,
-      weeksSinceJoin,
-      memberSince: createdAt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-    };
-  }, [user]);
+  const appearance = getAppearance();
+  const [pendingSize, setPendingSize] = useState<AppearanceSettings['textSize'] | null>(null);
+  // Text in the app is already scaled; the preview shows the size relative to what is active now.
+  const previewScale = pendingSize ? TEXT_SCALE[pendingSize] / TEXT_SCALE[appearance.textSize] : 1;
 
-  // Calculate habit and prayer completions (lifetime totals)
-  const lifetimeStats = useMemo(() => {
-    // TODO: Connect to actual habit completion tracking
-    const totalHabitCompletions = habits.reduce((sum, habit) => sum + (habit.streakCount || 0), 0);
-    // TODO: Connect to actual prayer completion tracking
-    const totalPrayerCompletions = 0;
-    
-    return {
-      totalHabitCompletions,
-      totalPrayerCompletions,
-      totalWins: totalHabitCompletions + totalPrayerCompletions
-    };
-  }, [habits]);
+  const changeAppearance = (next: AppearanceSettings) => {
+    if (next.theme === appearance.theme && next.textSize === appearance.textSize) return;
+    setPendingSize(next.textSize);
+    Alert.alert('Apply appearance?', 'The app will restart for a moment to apply it.', [
+      { text: 'Cancel', style: 'cancel', onPress: () => setPendingSize(null) },
+      { text: 'Apply', onPress: () => saveAppearance(next) },
+    ]);
+  };
 
-  // Check notification permissions on mount
-  useEffect(() => {
-    const checkNotificationPermissions = async () => {
-      try {
-        const status = await Notifications.getPermissionsAsync();
-        setNotificationPermission(status.status === 'granted');
-        setNotificationsEnabled(status.status === 'granted');
-      } catch (error) {
-        console.warn('Failed to check notification permissions:', error);
-        setNotificationPermission(false);
-      }
-    };
-    
-    checkNotificationPermissions();
-  }, []);
-
-  // Calculate module statistics
-  useEffect(() => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    
-    const activeTasks = tasks.filter(task => task.status !== 'done');
-    const dueTodayTasks = tasks.filter(task => {
-      if (!task.deadline) return false;
-      const deadline = new Date(task.deadline);
-      return deadline <= today && deadline >= new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    });
-    
-    const dailyHabits = habits.filter(habit => habit.frequency === 'daily' as any);
-    const habitNames = dailyHabits.slice(0, 3).map(h => h.name);
-    
-    setModuleStats({
-      tasksActive: activeTasks.length,
-      tasksDueToday: dueTodayTasks.length,
-      habitsDaily: dailyHabits.length,
-      habitNames,
-      medicationsCount: 0, // TODO: Connect to medication store
-      nextMedTime: '', // TODO: Calculate next medication time
-      firstMedName: '', // TODO: Get first medication name
-    });
-  }, [tasks, habits]);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
+  const load = useCallback(async () => {
     try {
-      await Promise.all([fetchTasks(true), fetchHabits(true)]);
+      setSummary(await getProfileSummary());
     } catch (error) {
-      console.warn('Failed to refresh data:', error);
+      console.warn('Could not load profile summary', error);
     } finally {
       setRefreshing(false);
     }
-  };
+    Notifications.getPermissionsAsync()
+      .then((p) => setPermission(p.status === 'granted'))
+      .catch(() => setPermission(false));
+  }, []);
 
-  const handleNotificationToggle = async (value: boolean) => {
-    if (value && !notificationPermission) {
-      // Request permission when enabling
-      const granted = await requestNotificationPermissions();
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', load);
+    return unsubscribe;
+  }, [navigation, load]);
+
+  const setPref = async <K extends keyof Preferences>(key: K, value: Preferences[K]) => {
+    if (value === true && key.startsWith('notify_')) {
+      const granted = await ensureNotificationPermission();
+      setPermission(granted);
       if (!granted) {
-        Alert.alert(
-          'Notifications',
-          'To enable notifications, please grant permission in your device settings.'
-        );
-        return;
+        Alert.alert('Notifications are off', 'Allow notifications for this app in your phone settings.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open settings', onPress: () => Linking.openSettings() },
+        ]);
       }
     }
-    
-    if (!value && notificationsEnabled) {
-      Alert.alert(
-        'Turn off notifications?',
-        'This will stop all reminders for prayers, medication, and habits.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Turn off',
-            style: 'destructive',
-            onPress: () => setNotificationsEnabled(false),
-          },
-        ]
-      );
-    } else {
-      setNotificationsEnabled(value);
+    const result = await updateProfile({ preferences: { [key]: value } });
+    if (!result.ok) {
+      Alert.alert('Could not save', result.error ?? 'Please try again.');
+      return;
     }
+    // Re-sync task reminders now; medication and prayer re-sync when their screens open.
+    if (key === 'notify_tasks') fetchTasks(true);
   };
 
-  const handleSignOut = () => {
-    Alert.alert(
-      'Sign out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign out',
-          style: 'destructive',
-          onPress: () => {
-            logout();
-            navigation.navigate('Login' as any);
-          },
+  const confirmLogout = () =>
+    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         },
-      ]
-    );
-  };
+      },
+    ]);
 
-  const getUserInitial = () => {
-    return user?.fullName?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U';
-  };
-
-  const getJourneyText = () => {
-    const { weeksSinceJoin, daysSinceJoin } = userStats;
-    const { totalWins } = lifetimeStats;
-    
-    if (daysSinceJoin < 7) {
-      return `Fresh start — ${daysSinceJoin} days in. Welcome.`;
-    }
-    
-    if (totalWins === 0) {
-      return `${weeksSinceJoin} weeks with you. Ready when you are.`;
-    }
-    
-    return `${weeksSinceJoin} weeks with you, and ${totalWins} small wins. Steady as ever.`;
-  };
+  const name = user?.fullName || user?.email?.split('@')[0] || 'Friend';
+  const initials = name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  const memberSince = (summary?.member_since || user?.memberSince)
+    ? new Date(summary?.member_since || user!.memberSince).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : '';
+  const nextDose = summary?.medication.next_dose;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={moduleStyles.container}>
+      <ModuleHeader
+        title="Profile"
+        subtitle="Your account and preferences."
+        actions={[{ icon: 'create-outline', label: 'Edit profile', onPress: () => navigation.navigate('EditProfile') }]}
+      />
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
+        contentContainerStyle={moduleStyles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.primary} />}
       >
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <Pressable 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.topBarTitle}>Profile</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
-
-      {/* Hero Card */}
-      <View style={styles.heroCard}>
-        <View style={styles.heroRow}>
-          <View style={styles.avatarContainer}>
+        <HeroCard label={memberSince ? `Member since ${memberSince}` : 'Your account'}>
+          <View style={styles.identity}>
             {user?.avatarUrl ? (
               <Image source={{ uri: user.avatarUrl }} style={styles.avatar} />
             ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Text style={styles.avatarInitial}>{getUserInitial()}</Text>
+              <View style={[styles.avatar, styles.avatarFallback]}>
+                <Text style={styles.initials}>{initials}</Text>
               </View>
             )}
-            <Pressable 
-              style={styles.cameraButton}
-              onPress={() => navigation.navigate('EditProfile')}
-            >
-              <Ionicons name="camera" size={16} color={Colors.white} />
-            </Pressable>
-          </View>
-          <View style={styles.identityContainer}>
-            <Text style={styles.userName}>{user?.fullName || 'User'}</Text>
-            <Text style={styles.userEmail}>{user?.email}</Text>
-            <View style={styles.pill}>
-              <Text style={styles.pillText}>Companion since {userStats.memberSince}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name} numberOfLines={1}>
+                {name}
+              </Text>
+              <Text style={styles.email} numberOfLines={1}>
+                {user?.email}
+              </Text>
+              {user?.selectedCity ? <Text style={styles.email}>{user.selectedCity}</Text> : null}
             </View>
           </View>
-        </View>
-        <Pressable 
-          style={styles.editProfileButton}
-          onPress={() => navigation.navigate('EditProfile')}
-        >
-          <Text style={styles.editProfileText}>Edit Profile</Text>
-        </Pressable>
-      </View>
+          {user?.bio ? <Text style={styles.bio}>{user.bio}</Text> : null}
+          <HeroStats>
+            <HeroStat icon="calendar" label="Days with us" value={String(summary?.days_active ?? '–')} />
+            <HeroStat icon="checkmark-done" label="Tasks done" value={String(summary?.tasks.done ?? '–')} />
+          </HeroStats>
+        </HeroCard>
 
-      {/* Your Gentle Journey Card */}
-      <View style={styles.journeyCard}>
-        <Text style={styles.journeyLabel}>YOUR GENTLE JOURNEY</Text>
-        <Text style={styles.journeyText}>{getJourneyText()}</Text>
-        <View style={styles.statsTiles}>
-          <View style={styles.statTile}>
-            <Text style={styles.statTileValue}>{userStats.daysSinceJoin}</Text>
-            <Text style={styles.statTileLabel}>Days</Text>
-          </View>
-          <View style={styles.statTile}>
-            <Text style={styles.statTileValue}>{lifetimeStats.totalHabitCompletions}</Text>
-            <Text style={styles.statTileLabel}>Habits</Text>
-          </View>
-          <View style={styles.statTile}>
-            <Text style={styles.statTileValue}>{lifetimeStats.totalPrayerCompletions}</Text>
-            <Text style={styles.statTileLabel}>Prayers</Text>
-          </View>
-        </View>
-      </View>
+        <SectionHeader title="Your modules" />
+        <EntryCard
+          icon="checkbox-outline"
+          title="Tasks"
+          meta={summary ? `${summary.tasks.open} open · ${summary.tasks.due_today} due today` : 'Plan and track your tasks'}
+          note={summary ? `${summary.tasks.done_this_week} finished this week` : undefined}
+          onPress={() => navigation.navigate('MainTabs', { screen: 'Tasks' } as never)}
+        />
+        <EntryCard
+          icon="medkit-outline"
+          title="Medication"
+          meta={
+            summary
+              ? `${summary.medication.active} active${summary.medication.adherence_7d !== null ? ` · ${summary.medication.adherence_7d}% taken this week` : ''}`
+              : 'Doses, reminders and refills'
+          }
+          note={
+            summary?.medication.needs_refill
+              ? `${summary.medication.needs_refill} need a refill`
+              : nextDose
+                ? `Next: ${nextDose.name} at ${formatTime12(nextDose.time)}`
+                : undefined
+          }
+          noteColor={summary?.medication.needs_refill ? Colors.error : undefined}
+          onPress={() => navigation.navigate('Medication')}
+        />
+        <EntryCard
+          icon="flame-outline"
+          title="Habits"
+          meta={summary ? `${summary.habits.count} habits · best streak ${summary.habits.best_streak} days` : 'Build daily routines'}
+          onPress={() => navigation.navigate('MainTabs', { screen: 'Habits' } as never)}
+        />
+        <EntryCard
+          icon="people-outline"
+          title="Community"
+          meta={summary?.community ? `${summary.community.posts} posts shared` : 'Share progress with others'}
+          onPress={() => navigation.navigate('Community')}
+        />
 
-      {/* Preferences Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-          <Text style={styles.sectionHint}>Tap to change</Text>
-        </View>
-        <View style={styles.card}>
-          <Pressable 
-            style={styles.row}
-            onPress={() => {
-              // TODO: navigate to PrayerSettingsScreen
-              console.log('Navigate to Prayer Settings');
-            }}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="time-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel} numberOfLines={1} ellipsizeMode="tail">Prayer calculation</Text>
-            <Text style={styles.rowValue} numberOfLines={1} ellipsizeMode="tail">Karachi · Hanafi madhab</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => {
-              // TODO: navigate to LocationSettingsScreen
-              console.log('Navigate to Location Settings');
-            }}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="location-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel} numberOfLines={1} ellipsizeMode="tail">Location</Text>
-            <Text style={styles.rowValue} numberOfLines={1} ellipsizeMode="tail">{user?.selectedCity || 'Not set'}, Pakistan</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <View style={styles.row}>
-            <View style={styles.rowIcon}>
-              <Ionicons name="notifications-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel} numberOfLines={1} ellipsizeMode="tail">Notifications</Text>
-            <Text style={styles.rowValue} numberOfLines={1} ellipsizeMode="tail">Prayers, medication, habits</Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={handleNotificationToggle}
-              trackColor={{ false: Colors.borderLight, true: Colors.primaryLight }}
-              thumbColor={notificationsEnabled ? Colors.primary : Colors.textHint}
-            />
-          </View>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => {
-              // TODO: navigate to ThemePickerScreen
-              console.log('Navigate to Theme Picker');
-            }}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="color-palette-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel} numberOfLines={1} ellipsizeMode="tail">Appearance</Text>
-            <Text style={styles.rowValue} numberOfLines={1} ellipsizeMode="tail">Soft sage · Light</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => {
-              // TODO: navigate to LanguagePickerScreen
-              console.log('Navigate to Language Picker');
-            }}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="language-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel} numberOfLines={1} ellipsizeMode="tail">Language</Text>
-            <Text style={styles.rowValue} numberOfLines={1} ellipsizeMode="tail">English · اردو available</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-        </View>
-      </View>
+        <Card title="Notifications" right={permission === false ? <Text style={styles.warn}>Blocked in settings</Text> : undefined}>
+          <ToggleRow title="Task reminders" meta="Reminder times and due-day alerts" value={prefs.notify_tasks} onValueChange={(v) => setPref('notify_tasks', v)} />
+          <ToggleRow title="Habit reminders" meta="The daily reminder you set on each habit" value={prefs.notify_habits} onValueChange={(v) => setPref('notify_habits', v)} />
+          <ToggleRow title="Medication reminders" meta="Dose times, follow-ups and refills" value={prefs.notify_medication} onValueChange={(v) => setPref('notify_medication', v)} />
+          <ToggleRow title="Prayer alerts" meta="A notification at each prayer time" value={prefs.notify_prayer} onValueChange={(v) => setPref('notify_prayer', v)} />
+          <ToggleRow title="Severe weather alerts" meta="Storms, heat waves and other warnings" value={prefs.notify_weather_alerts} onValueChange={(v) => setPref('notify_weather_alerts', v)} />
+          {permission === false ? (
+            <SecondaryButton label="Open phone settings" icon="settings-outline" onPress={() => Linking.openSettings()} />
+          ) : null}
+        </Card>
 
-      {/* Your Modules Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Your modules</Text>
-          <Text style={styles.sectionHint}>Active</Text>
-        </View>
-        <View style={styles.card}>
-          <Pressable 
-            style={styles.row}
-            onPress={() => navigation.navigate('Tasks' as any)}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="checkbox-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel}>Tasks</Text>
-            <Text style={styles.rowValue}>
-              {moduleStats.tasksActive} active · {moduleStats.tasksDueToday} due today
+        <Card title="Appearance">
+          <Text style={moduleStyles.bodyStrong}>Theme</Text>
+          <Segmented
+            options={[
+              { key: 'light', label: 'Light' },
+              { key: 'dark', label: 'Dark' },
+              { key: 'system', label: 'Phone' },
+            ]}
+            value={appearance.theme}
+            onChange={(theme) => changeAppearance({ ...appearance, theme })}
+          />
+          <Text style={moduleStyles.bodyStrong}>Text size</Text>
+          <Segmented
+            options={[
+              { key: 'small', label: 'Small' },
+              { key: 'medium', label: 'Medium' },
+              { key: 'large', label: 'Large' },
+            ]}
+            value={appearance.textSize}
+            onChange={(textSize) => changeAppearance({ ...appearance, textSize })}
+          />
+          <View style={styles.preview}>
+            <Text style={[styles.previewTitle, { fontSize: 17 * previewScale }]}>Preview text</Text>
+            <Text style={[moduleStyles.body, { fontSize: 14 * previewScale, lineHeight: 20 * previewScale }]}>
+              This is how text will look across the app.
             </Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => navigation.navigate('Habits' as any)}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="repeat-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel}>Habits</Text>
-            <Text style={styles.rowValue}>
-              {moduleStats.habitsDaily} daily · {moduleStats.habitNames.join(', ')}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => navigation.navigate('Medication' as any)}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="medical-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel}>Medication</Text>
-            <Text style={styles.rowValue}>
-              {moduleStats.medicationsCount > 0 
-                ? `${moduleStats.firstMedName} · daily at ${moduleStats.nextMedTime}`
-                : 'No medications'
-              }
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => navigation.navigate('Weather' as any)}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="partly-sunny-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel}>Weather</Text>
-            <Text style={styles.rowValue}>Auto-location · °C</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-        </View>
-      </View>
+          </View>
+          <Text style={moduleStyles.muted}>Dark mode is easier on the eyes at night. The app restarts for a moment to apply changes.</Text>
+        </Card>
 
-      {/* Account Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.card}>
-          <Pressable 
-            style={styles.row}
-            onPress={() => {
-              // TODO: navigate to ChangeEmailScreen
-              console.log('Navigate to Change Email');
-            }}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="mail-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel}>Email</Text>
-            <Text style={styles.rowValue}>{user?.email}</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => {
-              // TODO: navigate to ChangePasswordScreen
-              console.log('Navigate to Change Password');
-            }}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="lock-closed-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel}>Change password</Text>
-            <Text style={styles.rowValue}>Last changed at signup</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => {
-              // TODO: navigate to PrivacyScreen
-              console.log('Navigate to Privacy & Data');
-            }}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="shield-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel}>Privacy & data</Text>
-            <Text style={styles.rowValue}>Export, delete, control</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-          
-          <Pressable 
-            style={styles.row}
-            onPress={() => {
-              // TODO: navigate to AboutScreen
-              console.log('Navigate to About & Help');
-            }}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="help-circle-outline" size={20} color={Colors.primary} />
-            </View>
-            <Text style={styles.rowLabel}>About & help</Text>
-            <Text style={styles.rowValue}>Version {appVersion} · Send feedback</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-        </View>
-      </View>
+        <Card title="Preferences">
+          <Text style={moduleStyles.bodyStrong}>Temperature</Text>
+          <Segmented
+            options={[
+              { key: 'C', label: 'Celsius °C' },
+              { key: 'F', label: 'Fahrenheit °F' },
+            ]}
+            value={prefs.temperature_unit}
+            onChange={(v) => setPref('temperature_unit', v)}
+          />
+          <Text style={moduleStyles.bodyStrong}>Asr time</Text>
+          <Segmented
+            options={[
+              { key: '1', label: 'Hanafi' },
+              { key: '0', label: 'Shafi / others' },
+            ]}
+            value={String(prefs.prayer_school) as '0' | '1'}
+            onChange={(v) => setPref('prayer_school', Number(v))}
+          />
+          <ToggleRow
+            title="Show me on leaderboards"
+            meta="Your name and streaks in Community rankings"
+            value={prefs.community_visible}
+            onValueChange={(v) => setPref('community_visible', v)}
+          />
+          <Text style={moduleStyles.muted}>Time zone: {user?.timezone || 'detecting...'}</Text>
+        </Card>
 
-      {/* Sign Out */}
-      <View style={styles.signOutContainer}>
-        <Pressable style={styles.signOutButton} onPress={handleSignOut}>
-          <Ionicons name="log-out-outline" size={20} color={Colors.warning} />
-          <Text style={styles.signOutText}>Sign out</Text>
-        </Pressable>
-      </View>
+        <Card title="Account">
+          <SecondaryButton label="Edit profile" icon="person-outline" onPress={() => navigation.navigate('EditProfile')} />
+          <SecondaryButton label="Sign out" icon="log-out-outline" danger onPress={confirmLogout} />
+        </Card>
 
-      {/* App Footer */}
-      <View style={styles.footer}>
-        <Text style={styles.footerTitle}>Companion</Text>
-        <Text style={styles.footerSubtitle}>made with care · v{appVersion}</Text>
-      </View>
+        <Text style={[moduleStyles.muted, { textAlign: 'center' }]}>
+          Personal Companion · version {Constants.expoConfig?.version ?? '1.0.0'}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgLight,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    paddingBottom: 100,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.card,
-  },
-  topBarTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 20,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  topBarSpacer: {
-    width: 40,
-  },
-  heroCard: {
-    backgroundColor: Colors.primary,
-    marginHorizontal: 16,
-    borderRadius: Radius.xl,
-    padding: 24,
-    marginBottom: 16,
-    ...Shadows.button,
-  },
-  heroRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  avatarContainer: {
-    marginRight: 16,
-    position: 'relative',
-  },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-  },
-  cameraButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.textPrimary,
-    borderWidth: 2,
-    borderColor: Colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarPlaceholder: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitial: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.white,
-  },
-  identityContainer: {
-    flex: 1,
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.white,
-    marginBottom: 4,
-  },
-  userEmail: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 8,
-  },
-  pill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  pillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  editProfileButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  editProfileText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  journeyCard: {
-    backgroundColor: '#FFF8E7', // Warm cream/beige
-    marginHorizontal: 16,
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 24,
-  },
-  journeyLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.accentAmber,
-    marginBottom: 12,
-    letterSpacing: 1,
-  },
-  journeyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    marginBottom: 20,
-    lineHeight: 28,
-  },
-  statsTiles: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.03)',
-    borderRadius: 12,
-    padding: 16,
-  },
-  statTile: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statTileValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.primary,
-    marginBottom: 4,
-  },
-  statTileLabel: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  sectionHint: {
-    fontSize: 12,
-    color: Colors.textHint,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: Colors.surfaceLight,
-    marginHorizontal: 16,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    ...Shadows.card,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  rowIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: Colors.primarySurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  rowLabel: {
-    width: 110,
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-  rowValue: {
-    flex: 1,
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginRight: 8,
-  },
-  signOutContainer: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-  },
-  signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 16,
-    paddingVertical: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  signOutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.warning,
-    marginLeft: 8,
-  },
-  footer: {
-    alignItems: 'center',
-    paddingBottom: 20,
-  },
-  footerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    fontStyle: 'italic',
-  },
-  footerSubtitle: {
-    fontSize: 11,
-    color: Colors.textHint,
-    marginTop: 4,
-  },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 6 },
+  avatar: { width: 64, height: 64, borderRadius: 32, borderWidth: 3, borderColor: 'rgba(255,255,255,0.6)' },
+  avatarFallback: { backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  initials: { fontFamily: Font.extrabold, fontSize: 24, color: Colors.white },
+  name: { fontFamily: Font.extrabold, fontSize: 22, color: Colors.white },
+  email: { fontFamily: Font.medium, fontSize: 14, color: 'rgba(255,255,255,0.9)' },
+  bio: { fontFamily: Font.medium, fontSize: 14, lineHeight: 20, color: Colors.white, marginTop: 8 },
+  preview: { backgroundColor: Colors.bgLight, borderRadius: 14, padding: 12, gap: 4 },
+  previewTitle: { fontFamily: Font.extrabold, color: Colors.textPrimary },
+  warn: { fontFamily: Font.bold, fontSize: 13, color: Colors.error },
 });

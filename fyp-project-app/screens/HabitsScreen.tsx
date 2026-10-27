@@ -1,359 +1,239 @@
-import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
+
 import { useAppContext } from '../context/AppContext';
-import { Colors, Radius, Shadows } from '../constants/theme';
+import { Colors, Font, Radius } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
+import { HABIT_CATEGORIES, getHabits, type HabitCategory, type HabitDto } from '../services/habitService';
+import { HabitCard } from '../components/habits/HabitCard';
+import { HabitInsightsTab } from '../components/habits/HabitInsightsTab';
+import {
+  CenterLoader,
+  ChipRow,
+  EmptyCard,
+  Fab,
+  HeroCard,
+  HeroStat,
+  HeroStats,
+  ModuleHeader,
+  PillTabs,
+  ProgressBar,
+  SectionHeader,
+  moduleStyles,
+} from '../components/module/ModuleUI';
+import { CATEGORY_META, HABIT_SUGGESTIONS, isDue } from '../utils/habitFormat';
 
-type HabitsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
-
-function getCategoryEmoji(category: string): string {
-  const emojiMap: Record<string, string> = {
-    'Health': '🏥',
-    'Fitness': '💪',
-    'Study': '📚',
-    'Mindfulness': '🧘',
-    'Finance': '💰',
-    'Other': '⭐',
-  };
-  return emojiMap[category] || '⭐';
-}
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+type TabKey = 'today' | 'all' | 'insights';
 
 export function HabitsScreen() {
-  const { habits, habitsLoading, habitsError, fetchHabits } = useAppContext();
-  const navigation = useNavigation<HabitsScreenNavigationProp>();
-  
-  // Selected habit state
-  const [selectedHabit, setSelectedHabit] = useState<any>(null);
+  const navigation = useNavigation<Nav>();
+  const { habits, habitsLoading, habitsError, fetchHabits, completeHabit, saveHabit, deleteHabit } = useAppContext();
+  const [tab, setTab] = useState<TabKey>('today');
+  const [category, setCategory] = useState<'All' | HabitCategory | 'Archived'>('All');
+  const [archived, setArchived] = useState<HabitDto[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
-  useEffect(() => {
-    fetchHabits();
+  useEffect(
+    () => navigation.addListener('focus', () => fetchHabits(true).finally(() => setLoadedOnce(true))),
+    [navigation, fetchHabits]
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setReloadKey((k) => k + 1);
+    await fetchHabits(true);
+    setRefreshing(false);
   }, [fetchHabits]);
 
-  // Calculate today's completion stats
-  const today = getTodayDateString();
-  const completedToday = habits.filter(habit => habit.lastCompletedDate === today).length;
-  const totalHabits = habits.length;
-
-  // Get only the 3 most recent habits for preview
-  const recentHabits = habits.slice(0, 3);
-
-  const handleAddHabit = () => {
-    navigation.navigate('AddHabit');
+  const showCategory = async (key: 'All' | HabitCategory | 'Archived') => {
+    setCategory(key);
+    if (key === 'Archived') getHabits(true).then(setArchived).catch(() => setArchived([]));
   };
 
-  const handleViewAllHabits = () => {
-    navigation.navigate('AllHabits');
-  };
+  const toDo = habits.filter(isDue);
+  const doneToday = habits.filter((h) => h.doneToday);
+  const weeklyMet = habits.filter((h) => !h.doneToday && !isDue(h));
+  const daily = habits.filter((h) => h.frequency === 'Daily');
+  const dailyDone = daily.filter((h) => h.doneToday).length;
+  const bestRunning = habits.reduce((m, h) => Math.max(m, h.streakCount), 0);
+  const avgRate = habits.length ? Math.round(habits.reduce((s, h) => s + h.rate30d, 0) / habits.length) : 0;
 
-  const handleViewAnalytics = () => {
-    navigation.navigate('HabitAnalytics');
-  };
+  const filtered = useMemo(
+    () => (category === 'Archived' ? archived : category === 'All' ? habits : habits.filter((h) => h.category === category)),
+    [habits, archived, category]
+  );
+
+  const open = (h: HabitDto) => navigation.navigate('HabitDetail', { habitId: h.id });
+
+  const actions = (h: HabitDto) =>
+    Alert.alert(h.name, undefined, [
+      { text: 'Edit', onPress: () => navigation.navigate('AddHabit', { habitId: h.id }) },
+      {
+        text: h.isArchived ? 'Restore' : 'Archive',
+        onPress: async () => {
+          await saveHabit(h.id, { is_archived: !h.isArchived });
+          if (h.isArchived) setArchived((prev) => prev.filter((a) => a.id !== h.id));
+        },
+      },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert('Delete habit', `Delete "${h.name}" and all its history?`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => deleteHabit(h.id) },
+          ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+
+  const list = (items: HabitDto[]) => (
+    <View style={moduleStyles.list}>
+      {items.map((h) => (
+        <HabitCard
+          key={h.id}
+          habit={h}
+          onPress={() => open(h)}
+          onToggle={() => (h.isArchived ? open(h) : completeHabit(h.id))}
+          onLongPress={() => actions(h)}
+        />
+      ))}
+    </View>
+  );
+
+  const suggestions = (
+    <View style={{ gap: 10 }}>
+      <SectionHeader title="Ideas to start with" />
+      <View style={styles.suggestions}>
+        {HABIT_SUGGESTIONS.slice(0, 6).map((s) => {
+          const meta = CATEGORY_META[s.category];
+          return (
+            <Pressable key={s.name} style={styles.suggestion} onPress={() => navigation.navigate('AddHabit', { preset: s.name })}>
+              <Ionicons name={meta.icon} size={16} color={meta.color} />
+              <Text style={styles.suggestionText} numberOfLines={1}>
+                {s.name}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  const renderToday = () =>
+    habits.length === 0 ? (
+      <>
+        <EmptyCard text={habitsError ?? 'No habits yet. Small daily steps add up — add your first one.'} icon="flame-outline" />
+        {suggestions}
+      </>
+    ) : (
+      <>
+        <HeroCard
+          label={`${new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })} · Habits`}
+          value={toDo.length === 0 ? 'All done for today' : `${doneToday.length} of ${doneToday.length + toDo.length} done`}
+        >
+          <View style={{ marginTop: 6 }}>
+            <ProgressBar pct={daily.length ? (dailyDone / daily.length) * 100 : toDo.length ? 0 : 100} color={Colors.white} />
+          </View>
+          <HeroStats>
+            <HeroStat icon="flame" label="Best running" value={`${bestRunning} days`} />
+            <HeroStat icon="trending-up" label="30-day average" value={`${avgRate}%`} />
+          </HeroStats>
+        </HeroCard>
+
+        <SectionHeader title={toDo.length ? 'To do' : 'To do · nothing left'} />
+        {toDo.length ? list(toDo) : <EmptyCard text="Every habit is checked. Great work!" icon="checkmark-done-outline" />}
+
+        {doneToday.length > 0 ? (
+          <>
+            <SectionHeader title="Done today" />
+            {list(doneToday)}
+          </>
+        ) : null}
+
+        {weeklyMet.length > 0 ? (
+          <>
+            <SectionHeader title="Weekly goal reached" />
+            {list(weeklyMet)}
+          </>
+        ) : null}
+        <Text style={[moduleStyles.muted, { textAlign: 'center' }]}>Tap ✓ to check in · tap a habit for its history · long-press for options</Text>
+      </>
+    );
+
+  const renderAll = () => (
+    <>
+      <ChipRow
+        options={[
+          { key: 'All' as const, label: 'All' },
+          ...HABIT_CATEGORIES.filter((c) => habits.some((h) => h.category === c)).map((c) => ({ key: c, label: c })),
+          { key: 'Archived' as const, label: 'Archived' },
+        ]}
+        value={category}
+        onChange={showCategory}
+        scroll
+      />
+      {filtered.length === 0 ? (
+        <EmptyCard text={category === 'Archived' ? 'No archived habits.' : 'No habits here yet.'} icon="albums-outline" />
+      ) : (
+        list(filtered)
+      )}
+      {category !== 'Archived' ? suggestions : null}
+    </>
+  );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Habit Tracker</Text>
-        <Text style={styles.subtitle}>Build and track daily habits with streak tracking and progress analytics.</Text>
-      </View>
-
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Today's Progress</Text>
-        {totalHabits === 0 ? (
-          <Text style={styles.summaryText}>No habits added yet</Text>
-        ) : (
-          <>
-            <Text style={styles.summaryText}>
-              {completedToday} of {totalHabits} habits completed
-            </Text>
-            <View style={styles.progressBar}>
-              <View 
-                style={[
-                  styles.progressFill, 
-                  { width: `${(completedToday / totalHabits) * 100}%` }
-                ]} 
-              />
-            </View>
-          </>
-        )}
-      </View>
-
-      {/* Add Habit Button */}
-      <Pressable style={styles.addHabitButton} onPress={handleAddHabit}>
-        <Text style={styles.addHabitButtonText}>+ Add Habit</Text>
-      </Pressable>
-
-      {/* Recent Habits Preview */}
-      {recentHabits.length > 0 && (
-        <View style={styles.previewSection}>
-          <Text style={styles.previewTitle}>Recent Habits</Text>
-          {recentHabits.map((habit) => (
-            <Pressable key={habit.id} onPress={() => setSelectedHabit(habit)}>
-              <View style={styles.previewCard}>
-                <Text style={styles.previewHabitName}>{getCategoryEmoji(habit.category)} {habit.name}</Text>
-                <View style={styles.previewMeta}>
-                  <Text style={styles.previewMetaText}>Frequency: {habit.frequency}</Text>
-                  <Text style={styles.previewMetaText}>Streak: {habit.streakCount}</Text>
-                </View>
-              </View>
-            </Pressable>
-          ))}
-          
-          {/* View All Habits Button */}
-          <Pressable style={styles.viewAllButton} onPress={handleViewAllHabits}>
-            <Text style={styles.viewAllButtonText}>View All Habits</Text>
-          </Pressable>
-
-          {/* View Analytics Button */}
-          <Pressable style={styles.viewAllButton} onPress={handleViewAnalytics}>
-            <Text style={styles.viewAllButtonText}>View Analytics 📊</Text>
-          </Pressable>
-        </View>
+    <SafeAreaView style={moduleStyles.container} edges={['top']}>
+      <ModuleHeader
+        title="Habits"
+        subtitle="Small steps, every day."
+        showBack={false}
+        actions={[{ icon: 'add-circle-outline', label: 'Add habit', onPress: () => navigation.navigate('AddHabit') }]}
+      />
+      <PillTabs
+        tabs={[
+          { key: 'today', label: 'Today' },
+          { key: 'all', label: 'All habits' },
+          { key: 'insights', label: 'Insights' },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {!loadedOnce && habitsLoading && habits.length === 0 ? (
+        <CenterLoader />
+      ) : (
+        <ScrollView
+          contentContainerStyle={moduleStyles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        >
+          {tab === 'today' ? renderToday() : tab === 'all' ? renderAll() : <HabitInsightsTab habits={habits} reloadKey={reloadKey} />}
+        </ScrollView>
       )}
-
-      {habitsLoading && habits.length > 0 ? (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color={Colors.primary} />
-        </View>
-      ) : null}
-      
-      {/* Selected Habit Modal */}
-      <Modal
-        visible={selectedHabit !== null}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setSelectedHabit(null)}>
-        <View style={styles.selectedHabitOverlay}>
-          <View style={styles.selectedHabitModalContent}>
-            <Text style={styles.selectedHabitTitle}>{getCategoryEmoji(selectedHabit?.category || 'Other')} {selectedHabit?.name}</Text>
-            <Text style={styles.selectedHabitMeta}>Frequency: {selectedHabit?.frequency}</Text>
-            <Text style={styles.selectedHabitMeta}>Current Streak: {selectedHabit?.streakCount} 🔥</Text>
-            <Text style={styles.selectedHabitMeta}>Best Streak: {selectedHabit?.bestStreak} 🏆</Text>
-            <Text style={styles.selectedHabitMeta}>
-              Last Completed: {selectedHabit?.lastCompletedDate ?? 'Not completed yet'}
-            </Text>
-            {selectedHabit?.reminderTime && (
-              <Text style={styles.selectedHabitMeta}>⏰ Reminder: {selectedHabit.reminderTime}</Text>
-            )}
-            <Pressable style={styles.selectedHabitCloseButton} onPress={() => setSelectedHabit(null)}>
-              <Text style={styles.selectedHabitCloseButtonText}>Close</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      {tab !== 'insights' ? <Fab onPress={() => navigation.navigate('AddHabit')} label="Add habit" aboveAssistant /> : null}
     </SafeAreaView>
   );
 }
 
-function getTodayDateString() {
-  return formatDate(new Date());
-}
-
-function formatDate(date: Date) {
-  return date.toISOString().split('T')[0];
-}
-
-function getWeekDays() {
-  const days = [];
-  const today = new Date();
-  
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    days.push({
-      date: formatDate(date),
-      dayLetter: ['S', 'M', 'T', 'W', 'T', 'F', 'S'][date.getDay()],
-      isToday: i === 0
-    });
-  }
-  
-  return days;
-}
-
-function getDateRange(days: number): string[] {
-  const dates = [];
-  const today = new Date();
-  
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    dates.push(formatDate(date));
-  }
-  
-  return dates;
-}
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgLight,
-    paddingTop: 40,
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    paddingHorizontal: 16,
-  },
-  summaryCard: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 8,
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 12,
-    gap: 8,
-    ...Shadows.card,
-  },
-  summaryTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  summaryText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: Colors.borderLight,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: Colors.primary,
-    borderRadius: 4,
-  },
-  addHabitButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 16,
-    ...Shadows.button,
-  },
-  addHabitButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  previewSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  previewTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 12,
-    letterSpacing: -0.3,
-  },
-  previewCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 12,
-    marginBottom: 10,
-    gap: 6,
-    ...Shadows.card,
-  },
-  previewHabitName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  previewMeta: {
+  suggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  suggestion: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  previewMetaText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  viewAllButton: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 8,
-    height: 42,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
+    gap: 6,
+    paddingHorizontal: 12,
+    height: 38,
+    maxWidth: '100%',
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    backgroundColor: Colors.surfaceLight,
   },
-  viewAllButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    right: 18,
-    top: 14,
-  },
-  selectedHabitOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  selectedHabitModalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: Radius.xl,
-    padding: 24,
-    width: '80%',
-    maxWidth: 300,
-    alignItems: 'center',
-  },
-  selectedHabitTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 16,
-    textAlign: 'center',
-    letterSpacing: -0.3,
-  },
-  selectedHabitMeta: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  selectedHabitCloseButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginTop: 16,
-    ...Shadows.button,
-  },
-  selectedHabitCloseButtonText: {
-    color: Colors.white,
-    fontWeight: '600',
-    fontSize: 14,
-  },
+  suggestionText: { fontFamily: Font.semibold, fontSize: 13, color: Colors.textPrimary },
 });

@@ -1,445 +1,390 @@
-import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  Dimensions,
-} from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import type { NavigationProp, RouteProp } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 
-import { Colors, Radius, Shadows } from '../constants/theme';
 import { useAppContext } from '../context/AppContext';
+import { Colors, Font, Radius } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
+import {
+  addTaskFile,
+  addTaskLink,
+  removeTaskAttachment,
+  type Task,
+  type TaskAttachment,
+  type TaskStatus,
+} from '../services/taskService';
+import { toApiErrorMessage } from '../services/api';
+import {
+  Card,
+  CenterLoader,
+  EmptyCard,
+  HeroCard,
+  HeroStat,
+  HeroStats,
+  Input,
+  ModuleHeader,
+  Pill,
+  PrimaryButton,
+  ProgressBar,
+  SecondaryButton,
+  Segmented,
+  moduleStyles,
+} from '../components/module/ModuleUI';
+import { normalizeLink, pickTaskDocument, pickTaskPhoto } from '../components/tasks/pickAttachment';
+import {
+  PRIORITY_META,
+  STATUS_META,
+  dueLabel,
+  formatClock,
+  formatDateTime,
+  formatDuration,
+  isOverdue,
+} from '../utils/taskFormat';
 
-type TaskDetailRouteProp = RouteProp<RootStackParamList, 'TaskDetail'>;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Route = RouteProp<RootStackParamList, 'TaskDetail'>;
 
-type Task = {
-  id: string;
-  title: string;
-  description: string;
-  category?: string;
-  priority: 'high' | 'medium' | 'low';
-  status: 'pending' | 'in_progress' | 'done';
-  deadline?: string | null | undefined;
-  done?: boolean;
-  reminder_time?: string | null;
-  time_slot_start?: string | null;
-  time_slot_end?: string | null;
-  links?: string[];
-  time_spent_seconds?: number;
-  progress_percentage?: number;
-  email_reminder_enabled?: boolean;
-  attachments?: any[];
-  created_at?: string;
-  updated_at?: string;
-};
+const STATUSES: { key: TaskStatus; label: string }[] = [
+  { key: 'pending', label: 'To do' },
+  { key: 'in_progress', label: 'Doing' },
+  { key: 'done', label: 'Done' },
+];
+
+const PROGRESS_STEPS = [0, 25, 50, 75, 100];
 
 export function TaskDetailScreen() {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const route = useRoute<TaskDetailRouteProp>();
-  const { taskId } = route.params;
-  const { tasks, tasksLoading, fetchTasks, updateTask, deleteTask } = useAppContext();
-  
-  const [task, setTask] = useState<Task | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedTitle, setEditedTitle] = useState('');
-  const [editedDescription, setEditedDescription] = useState('');
-  const [editedPriority, setEditedPriority] = useState<'high' | 'medium' | 'low'>('medium');
-  const [editedDeadline, setEditedDeadline] = useState('');
-  const [editedStatus, setEditedStatus] = useState<'pending' | 'in_progress' | 'done'>('pending');
+  const navigation = useNavigation<Nav>();
+  const { params } = useRoute<Route>();
+  const { tasks, getTask, updateTask, deleteTask, logTime, sendReminderEmail, replaceTask } = useAppContext();
 
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+  // The shared task list is the source of truth when the task is in it (checkbox edits elsewhere
+  // show up here); `fetched` covers a task opened before the list has loaded.
+  const cached = tasks.find((t) => t.id === params.taskId) ?? null;
+  const [fetched, setTask] = useState<Task | null>(null);
+  const task = cached ?? fetched;
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [linkInput, setLinkInput] = useState('');
+  const [timerStart, setTimerStart] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const tick = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    const foundTask = tasks.find(t => t.id === taskId);
-    if (foundTask) {
-      setTask(foundTask);
-      setEditedTitle(foundTask.title);
-      setEditedDescription(foundTask.description || '');
-      setEditedPriority(foundTask.priority);
-      setEditedDeadline(foundTask.deadline || '');
-      setEditedStatus(foundTask.status);
-    }
-  }, [tasks, taskId]);
-
-  const handleSave = async () => {
-    if (!task) return;
-
-    setIsEditing(true);
+  const load = useCallback(async () => {
     try {
-      const updated = await updateTask(task.id, {
-        title: editedTitle,
-        description: editedDescription,
-        priority: editedPriority,
-        deadline: editedDeadline,
-        status: editedStatus,
-      });
-      
-      if (updated) {
-        Alert.alert('Success', 'Task updated successfully!');
-        navigation.goBack();
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update task');
+      setTask(await getTask(params.taskId));
+      setError(null);
+    } catch (err) {
+      setError(toApiErrorMessage(err, 'Could not load this task.'));
     } finally {
-      setIsEditing(false);
+      setRefreshing(false);
     }
-  };
+  }, [getTask, params.taskId]);
 
-  const handleDelete = () => {
-    if (!task) return;
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', load);
+    return unsubscribe;
+  }, [navigation, load]);
 
-    Alert.alert(
-      'Delete Task',
-      `Are you sure you want to delete "${task.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const ok = await deleteTask(task.id);
-            if (ok !== undefined && ok) {
-              navigation.goBack();
-            }
-          },
-        },
-      ]
-    );
-  };
+  useEffect(() => {
+    if (timerStart === null) return;
+    tick.current = setInterval(() => setElapsed((Date.now() - timerStart) / 1000), 1000);
+    return () => {
+      if (tick.current) clearInterval(tick.current);
+    };
+  }, [timerStart]);
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return Colors.error;
-      case 'medium': return Colors.warning;
-      case 'low': return Colors.success;
-      default: return Colors.textSecondary;
+  const run = async (action: () => Promise<Task | void>, failMessage: string) => {
+    setBusy(true);
+    try {
+      const result = await action();
+      if (result) setTask(result);
+    } catch (err) {
+      Alert.alert('Something went wrong', toApiErrorMessage(err, failMessage));
+    } finally {
+      setBusy(false);
     }
   };
 
   if (!task) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading task...</Text>
-        </View>
+      <SafeAreaView style={moduleStyles.container}>
+        <ModuleHeader title="Task" />
+        {error ? (
+          <View style={moduleStyles.content}>
+            <EmptyCard text={error} icon="cloud-offline-outline" />
+          </View>
+        ) : (
+          <CenterLoader />
+        )}
       </SafeAreaView>
     );
   }
 
+  const priority = PRIORITY_META[task.priority];
+  const overdue = isOverdue(task);
+
+  const setStatus = (status: TaskStatus) =>
+    run(() => updateTask(task.id, { status }), 'Could not update the status.');
+
+  // 100% finishes the task; any other value on a finished or untouched task means work is in progress.
+  const setProgress = (progress: number) => {
+    let status: TaskStatus = task.status;
+    if (progress === 100) status = 'done';
+    else if (progress > 0 && task.status !== 'in_progress') status = 'in_progress';
+    else if (progress === 0) status = 'pending';
+    run(() => updateTask(task.id, { progress_percentage: progress, status }), 'Could not update the progress.');
+  };
+
+  const stopTimer = () => {
+    const seconds = Math.round(elapsed);
+    setTimerStart(null);
+    setElapsed(0);
+    if (seconds < 1) return;
+    run(() => logTime(task.id, seconds), 'Could not save the tracked time.');
+  };
+
+  const startTimer = () => {
+    setElapsed(0);
+    setTimerStart(Date.now());
+    if (task.status === 'pending') setStatus('in_progress');
+  };
+
+  const refreshAfterAttachmentChange = async () => {
+    const fresh = await getTask(task.id);
+    replaceTask(fresh);
+    return fresh;
+  };
+
+  const addFile = (kind: 'camera' | 'gallery' | 'document') =>
+    run(async () => {
+      const picked = kind === 'document' ? await pickTaskDocument() : await pickTaskPhoto(kind === 'camera');
+      if (!picked) return;
+      await addTaskFile(task.id, picked);
+      return refreshAfterAttachmentChange();
+    }, 'Could not upload the file.');
+
+  const addLink = () => {
+    const url = normalizeLink(linkInput);
+    if (!url) return;
+    setLinkInput('');
+    run(async () => {
+      await addTaskLink(task.id, url);
+      return refreshAfterAttachmentChange();
+    }, 'Could not save the link.');
+  };
+
+  const removeAttachment = (item: TaskAttachment) =>
+    Alert.alert('Remove attachment', item.name, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () =>
+          run(async () => {
+            await removeTaskAttachment(task.id, item.id);
+            return refreshAfterAttachmentChange();
+          }, 'Could not remove the attachment.'),
+      },
+    ]);
+
+  const openUrl = (url: string | null) => {
+    if (url) Linking.openURL(url).catch(() => Alert.alert('Cannot open', url));
+  };
+
+  const emailMe = () =>
+    run(async () => {
+      Alert.alert('Email sent', await sendReminderEmail(task.id));
+    }, 'Could not send the email.');
+
+  const confirmDelete = () =>
+    Alert.alert('Delete task', `Delete "${task.title}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          if (await deleteTask(task.id)) navigation.goBack();
+        },
+      },
+    ]);
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView 
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={tasksLoading} onRefresh={fetchTasks} />}
+    <SafeAreaView style={moduleStyles.container}>
+      <ModuleHeader
+        title="Task"
+        subtitle={STATUS_META[task.status].label}
+        actions={[
+          { icon: 'create-outline', label: 'Edit task', onPress: () => navigation.navigate('AddTask', { taskId: task.id }) },
+          { icon: 'trash-outline', label: 'Delete task', onPress: confirmDelete },
+        ]}
+      />
+      <ScrollView
+        contentContainerStyle={moduleStyles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.primary} />}
+        keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Text style={styles.backButtonText}>← Back</Text>
-          </Pressable>
-          <Text style={styles.headerTitle}>{task.title}</Text>
-        </View>
+        <HeroCard label={task.category ? `${task.category} · ${priority.label} priority` : `${priority.label} priority`} value={task.title}>
+          <View style={{ marginTop: 6, gap: 6 }}>
+            <ProgressBar pct={task.progress_percentage} color={Colors.white} />
+          </View>
+          <HeroStats>
+            <HeroStat icon="calendar" label={overdue ? 'Overdue' : 'Deadline'} value={task.deadline ? dueLabel(task).replace('Overdue · ', '') : 'None'} />
+            <HeroStat icon="timer" label="Time spent" value={formatDuration(task.time_spent_seconds)} />
+          </HeroStats>
+        </HeroCard>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Details</Text>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Status:</Text>
-            <Text style={[styles.detailValue, { color: getPriorityColor(task.priority) }]}>
-              {task.status}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Priority:</Text>
-            <Text style={[styles.detailValue, { color: getPriorityColor(task.priority) }]}>
-              {task.priority.toUpperCase()}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Deadline:</Text>
-            <Text style={styles.detailValue}>
-              {task.deadline ? new Date(task.deadline).toLocaleDateString() : 'No deadline'}
-            </Text>
-          </View>
-        </View>
+        {task.description ? (
+          <Card title="Notes">
+            <Text style={moduleStyles.body}>{task.description}</Text>
+          </Card>
+        ) : null}
 
-        {isEditing && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Edit Task</Text>
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Title</Text>
-              <TextInput
-                style={styles.formInput}
-                value={editedTitle}
-                onChangeText={setEditedTitle}
-                placeholder="Task title"
+        <Card title="Status" right={<Pill text={`${task.progress_percentage}%`} />}>
+          <Segmented options={STATUSES} value={task.status} onChange={setStatus} />
+          <View style={styles.steps}>
+            {PROGRESS_STEPS.map((step) => (
+              <Pressable
+                key={step}
+                style={[styles.step, task.progress_percentage === step && styles.stepActive]}
+                onPress={() => setProgress(step)}
+                disabled={busy}
+              >
+                <Text style={[styles.stepText, task.progress_percentage === step && styles.stepTextActive]}>{step}%</Text>
+              </Pressable>
+            ))}
+          </View>
+          {task.completed_at ? <Text style={moduleStyles.muted}>Completed {formatDateTime(task.completed_at)}</Text> : null}
+        </Card>
+
+        <Card title="Time tracker" right={timerStart !== null ? <Pill text="Running" color={Colors.success} bg={Colors.tintGreen} /> : undefined}>
+          <Text style={styles.clock}>{formatClock(timerStart !== null ? elapsed : 0)}</Text>
+          {timerStart !== null ? (
+            <PrimaryButton label="Stop & save" icon="stop" onPress={stopTimer} />
+          ) : (
+            <PrimaryButton label="Start timer" icon="play" onPress={startTimer} disabled={task.done} />
+          )}
+          <View style={moduleStyles.grid}>
+            {[15, 30, 60].map((minutes) => (
+              <SecondaryButton
+                key={minutes}
+                label={`+${minutes}m`}
+                style={{ flex: 1 }}
+                onPress={() => run(() => logTime(task.id, minutes * 60), 'Could not save the time.')}
               />
+            ))}
+          </View>
+          <Text style={moduleStyles.muted}>Total tracked: {formatDuration(task.time_spent_seconds)}</Text>
+        </Card>
+
+        <Card title="Reminders">
+          <InfoRow icon="alarm-outline" label="Reminder" value={task.reminder_time ? formatDateTime(task.reminder_time) : 'Not set'} />
+          <InfoRow icon="calendar-outline" label="Due-day alert" value={task.deadline && !task.done ? '9:00 on the due day' : 'Off'} />
+          {task.email_reminder_enabled ? (
+            <SecondaryButton label="Email me this task" icon="mail-outline" onPress={emailMe} />
+          ) : (
+            <Text style={moduleStyles.muted}>Turn on Email reminder in Edit to email yourself this task.</Text>
+          )}
+        </Card>
+
+        <Card title="Attachments">
+          {task.links.map((link) => (
+            <Pressable key={link} style={styles.attachRow} onPress={() => openUrl(link)}>
+              <Ionicons name="link" size={18} color={Colors.primary} />
+              <Text style={styles.attachText} numberOfLines={1}>
+                {link}
+              </Text>
+            </Pressable>
+          ))}
+          {task.attachments.map((item) => (
+            <Pressable
+              key={item.id}
+              style={styles.attachRow}
+              onPress={() => openUrl(item.attachment_type === 'url' ? item.url : item.file_url)}
+              onLongPress={() => removeAttachment(item)}
+            >
+              <Ionicons name={item.attachment_type === 'url' ? 'link' : 'document-outline'} size={18} color={Colors.primary} />
+              <Text style={styles.attachText} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Pressable onPress={() => removeAttachment(item)} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={Colors.textHint} />
+              </Pressable>
+            </Pressable>
+          ))}
+          {task.links.length === 0 && task.attachments.length === 0 ? (
+            <Text style={moduleStyles.muted}>No files or links yet.</Text>
+          ) : null}
+          <View style={moduleStyles.row}>
+            <View style={{ flex: 1 }}>
+              <Input placeholder="Add a link" value={linkInput} onChangeText={setLinkInput} autoCapitalize="none" keyboardType="url" onSubmitEditing={addLink} />
             </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Description</Text>
-              <TextInput
-                style={[styles.formInput, styles.formTextarea]}
-                value={editedDescription}
-                onChangeText={setEditedDescription}
-                placeholder="Task description"
-                multiline
-                numberOfLines={4}
-              />
-            </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Priority</Text>
-              <View style={styles.priorityContainer}>
-                {(['low', 'medium', 'high'] as const).map(priority => (
-                  <Pressable
-                    key={priority}
-                    style={[
-                      styles.priorityButton,
-                      editedPriority === priority && (
-                        priority === 'high' ? styles.priorityButtonHigh :
-                        priority === 'medium' ? styles.priorityButtonMedium :
-                        styles.priorityButtonLow
-                      )
-                    ]}
-                    onPress={() => setEditedPriority(priority)}
-                  >
-                    <Text style={[
-                      styles.priorityButtonText,
-                      editedPriority === priority && (
-                        priority === 'high' ? styles.priorityButtonTextHigh :
-                        priority === 'medium' ? styles.priorityButtonTextMedium :
-                        styles.priorityButtonTextLow
-                      )
-                    ]}>
-                      {priority === 'high' ? '🔴 HIGH' : priority === 'medium' ? '🟡 MEDIUM' : '🟢 LOW'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Deadline</Text>
-              <TextInput
-                style={styles.formInput}
-                value={editedDeadline}
-                onChangeText={setEditedDeadline}
-                placeholder="YYYY-MM-DD"
-              />
-            </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Status</Text>
-              <View style={styles.priorityContainer}>
-                {(['pending', 'in_progress', 'done'] as const).map(status => (
-                  <Pressable
-                    key={status}
-                    style={[
-                      styles.priorityButton,
-                      editedStatus === status && (
-                        status === 'done' ? styles.priorityButtonHigh :
-                        status === 'in_progress' ? styles.priorityButtonMedium :
-                        styles.priorityButtonLow
-                      )
-                    ]}
-                    onPress={() => setEditedStatus(status)}
-                  >
-                    <Text style={[
-                      styles.priorityButtonText,
-                      editedStatus === status && (
-                        status === 'done' ? styles.priorityButtonTextHigh :
-                        status === 'in_progress' ? styles.priorityButtonTextMedium :
-                        styles.priorityButtonTextLow
-                      )
-                    ]}>
-                      {status === 'pending' ? '⏳ PENDING' : status === 'in_progress' ? '🔄 IN PROGRESS' : '✅ DONE'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-            <Pressable style={styles.saveButton} onPress={handleSave}>
-              <Text style={styles.saveButtonText}>Save Changes</Text>
+            <Pressable style={styles.iconBtn} onPress={addLink}>
+              <Ionicons name="add" size={22} color={Colors.white} />
             </Pressable>
           </View>
-        )}
+          <View style={moduleStyles.grid}>
+            <SecondaryButton label="Photo" icon="image-outline" style={{ flex: 1 }} onPress={() => addFile('gallery')} />
+            <SecondaryButton label="Camera" icon="camera-outline" style={{ flex: 1 }} onPress={() => addFile('camera')} />
+            <SecondaryButton label="File" icon="document-attach-outline" style={{ flex: 1 }} onPress={() => addFile('document')} />
+          </View>
+        </Card>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Actions</Text>
-          <Pressable style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>Delete Task</Text>
-          </Pressable>
-        </View>
+        {task.created_at ? <Text style={[moduleStyles.muted, { textAlign: 'center' }]}>Created {formatDateTime(task.created_at)}</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const { width, height } = Dimensions.get('window');
+function InfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+  return (
+    <View style={moduleStyles.rowBetween}>
+      <View style={moduleStyles.row}>
+        <Ionicons name={icon} size={18} color={Colors.textSecondary} />
+        <Text style={moduleStyles.body}>{label}</Text>
+      </View>
+      <Text style={moduleStyles.bodyStrong}>{value}</Text>
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
-  container: {
+  steps: { flexDirection: 'row', gap: 6 },
+  step: {
     flex: 1,
-    backgroundColor: Colors.bgLight,
-  },
-  content: {
-    padding: width * 0.04,
-  },
-  loadingContainer: {
-    flex: 1,
+    height: 36,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: Colors.surfaceLight,
   },
-  loadingText: {
-    marginTop: height * 0.02,
-    fontSize: width * 0.04,
-    color: Colors.textSecondary,
-  },
-  header: {
+  stepActive: { backgroundColor: Colors.primarySurface, borderColor: Colors.primary },
+  stepText: { fontFamily: Font.semibold, fontSize: 13, color: Colors.textSecondary },
+  stepTextActive: { color: Colors.primary, fontFamily: Font.bold },
+  clock: { fontFamily: Font.extrabold, fontSize: 40, color: Colors.textPrimary, textAlign: 'center', letterSpacing: 1 },
+  attachRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: width * 0.05,
-    paddingVertical: height * 0.02,
-    backgroundColor: Colors.surfaceLight,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight,
-  },
-  backButton: {
-    padding: width * 0.02,
-  },
-  backButtonText: {
-    fontSize: width * 0.04,
-    color: Colors.primary,
-    fontWeight: '600',
-  },
-  headerTitle: {
-    fontSize: width * 0.06,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    flex: 1,
-    textAlign: 'center',
-  },
-  section: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: width * 0.04,
-    padding: width * 0.05,
-    marginBottom: height * 0.02,
-  },
-  sectionTitle: {
-    fontSize: width * 0.045,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    marginBottom: height * 0.02,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: height * 0.015,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  detailLabel: {
-    fontSize: width * 0.04,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  detailValue: {
-    fontSize: width * 0.04,
-    color: Colors.textPrimary,
-    fontWeight: '500',
-  },
-  formGroup: {
-    marginBottom: height * 0.03,
-  },
-  formLabel: {
-    fontSize: width * 0.035,
-    color: Colors.textSecondary,
-    marginBottom: height * 0.01,
-    fontWeight: '600',
-  },
-  formInput: {
-    backgroundColor: Colors.bgLight,
+    gap: 10,
+    paddingHorizontal: 12,
+    height: 44,
     borderRadius: Radius.md,
-    padding: width * 0.04,
-    fontSize: width * 0.04,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  formTextarea: {
-    height: height * 0.15,
-    textAlignVertical: 'top',
-  },
-  priorityContainer: {
-    flexDirection: 'row',
-    gap: width * 0.02,
-  },
-  priorityButton: {
-    flex: 1,
-    paddingVertical: height * 0.015,
-    borderRadius: width * 0.03,
     backgroundColor: Colors.bgLight,
     borderWidth: 1,
     borderColor: Colors.borderLight,
-    alignItems: 'center',
   },
-  priorityButtonHigh: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#EF4444',
-  },
-  priorityButtonMedium: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
-  },
-  priorityButtonLow: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#22C55E',
-  },
-  priorityButtonText: {
-    fontSize: width * 0.035,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-  priorityButtonTextHigh: {
-    color: '#EF4444',
-  },
-  priorityButtonTextMedium: {
-    color: '#F59E0B',
-  },
-  priorityButtonTextLow: {
-    color: '#22C55E',
-  },
-  saveButton: {
+  attachText: { flex: 1, fontFamily: Font.medium, fontSize: 14, color: Colors.textPrimary },
+  iconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: Radius.md,
     backgroundColor: Colors.primary,
-    borderRadius: width * 0.04,
-    paddingVertical: height * 0.02,
     alignItems: 'center',
-    marginTop: height * 0.03,
-    ...Shadows.button,
-  },
-  saveButtonText: {
-    color: Colors.white,
-    fontSize: width * 0.04,
-    fontWeight: '700',
-  },
-  deleteButton: {
-    backgroundColor: Colors.error,
-    borderRadius: width * 0.04,
-    paddingVertical: height * 0.02,
-    alignItems: 'center',
-    marginTop: height * 0.03,
-  },
-  deleteButtonText: {
-    color: Colors.white,
-    fontSize: width * 0.04,
-    fontWeight: '700',
+    justifyContent: 'center',
   },
 });

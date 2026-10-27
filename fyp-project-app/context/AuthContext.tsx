@@ -5,8 +5,12 @@ import {
   me as meRequest,
   updateProfile as updateProfileRequest,
   type AuthPayload,
+  type Preferences,
 } from '../services/authService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { supabase } from '../services/supabase';
+import { deviceTimezone, setReminderPreferences } from '../services/reminderService';
 
 type AuthUser = {
   email: string;
@@ -16,6 +20,20 @@ type AuthUser = {
   avatarUrl: string;
   bio: string;
   selectedCity: string;
+  timezone: string;
+  preferences: Preferences | null;
+  memberSince: string;
+};
+
+type ProfileUpdate = {
+  fullName?: string;
+  avatarUrl?: string;
+  avatarImageUri?: string;
+  removeAvatar?: boolean;
+  bio?: string;
+  selectedCity?: string;
+  timezone?: string;
+  preferences?: Partial<Preferences>;
 };
 
 type AuthResult = { ok: boolean; error?: string; needsVerification?: boolean };
@@ -28,17 +46,16 @@ type AuthContextValue = {
   signup: (email: string, password: string, fullName?: string) => Promise<AuthResult>;
   verifyEmail: (email: string, code: string) => Promise<AuthResult>;
   resendVerification: (email: string) => Promise<AuthResult>;
-  updateProfile: (input: {
-    fullName?: string;
-    avatarUrl?: string;
-    avatarImageUri?: string;
-    bio?: string;
-    selectedCity?: string;
-  }) => Promise<{ ok: boolean; error?: string }>;
+  updateProfile: (input: ProfileUpdate) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+// DEV ONLY: login disabled. "Sign in" skips Supabase and loads the backend's demo user
+// (needs DEV_AUTH_BYPASS=True in fyp-backend/.env). Turn off by removing EXPO_PUBLIC_AUTH_BYPASS.
+const AUTH_BYPASS = process.env.EXPO_PUBLIC_AUTH_BYPASS === '1';
+const BYPASS_KEY = 'auth.bypassSignedIn';
 
 function toAuthUser(payload: AuthPayload, token: string): AuthUser {
   return {
@@ -49,6 +66,9 @@ function toAuthUser(payload: AuthPayload, token: string): AuthUser {
     avatarUrl: payload.avatar_url ?? '',
     bio: payload.bio ?? '',
     selectedCity: payload.selected_city ?? '',
+    timezone: payload.timezone ?? '',
+    preferences: payload.preferences ?? null,
+    memberSince: payload.member_since ?? '',
   };
 }
 
@@ -79,6 +99,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const restoreSession = async () => {
       try {
+        // Stay signed in as the demo user across app reloads (e.g. after changing the theme).
+        if (AUTH_BYPASS && (await AsyncStorage.getItem(BYPASS_KEY)) === '1') {
+          const payload = await meRequest();
+          setApiRequestUserId(payload.user_id);
+          setUser(toAuthUser(payload, ''));
+          return;
+        }
         const { data } = await supabase.auth.getSession();
         if (data.session) {
           try {
@@ -112,6 +139,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string): Promise<AuthResult> => {
+    if (AUTH_BYPASS) {
+      try {
+        setApiAuthToken(null);
+        const payload = await meRequest();
+        setApiRequestUserId(payload.user_id);
+        setUser(toAuthUser(payload, ''));
+        await AsyncStorage.setItem(BYPASS_KEY, '1');
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: toApiErrorMessage(err, 'Could not load the demo user.') };
+      }
+    }
+
     const cleanEmail = email.trim().toLowerCase();
 
     if (!isValidEmail(cleanEmail)) {
@@ -196,13 +236,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return error ? { ok: false, error: error.message } : { ok: true };
   };
 
-  const updateProfile = async (input: {
-    fullName?: string;
-    avatarUrl?: string;
-    avatarImageUri?: string;
-    bio?: string;
-    selectedCity?: string;
-  }) => {
+  const updateProfile = async (input: ProfileUpdate) => {
     if (!user) {
       return { ok: false, error: 'Not authenticated.' };
     }
@@ -212,17 +246,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         full_name: input.fullName,
         avatar_url: input.avatarUrl,
         avatar_image_uri: input.avatarImageUri,
+        remove_avatar: input.removeAvatar,
         bio: input.bio,
         selected_city: input.selectedCity,
+        timezone: input.timezone,
+        preferences: input.preferences,
       });
 
-      setUser({
-        ...user,
-        fullName: payload.full_name ?? '',
-        avatarUrl: payload.avatar_url ?? '',
-        bio: payload.bio ?? '',
-        selectedCity: payload.selected_city ?? '',
-      });
+      setUser((current) =>
+        current
+          ? {
+              ...current,
+              fullName: payload.full_name ?? '',
+              avatarUrl: payload.avatar_url ?? '',
+              bio: payload.bio ?? '',
+              selectedCity: payload.selected_city ?? '',
+              timezone: payload.timezone ?? current.timezone,
+              preferences: payload.preferences ?? current.preferences,
+            }
+          : current
+      );
       return { ok: true };
     } catch (error) {
       return {
@@ -233,12 +276,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    await AsyncStorage.removeItem(BYPASS_KEY).catch(() => {});
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.warn('Supabase sign out failed, clearing local session anyway', error);
     }
     clearSession();
   };
+
+  // Profile module: keep the server on the phone's time zone (dose schedules use it) and
+  // let reminders follow the notification switches in the profile preferences.
+  useEffect(() => {
+    if (!user) return;
+    setReminderPreferences(user.preferences);
+    const tz = deviceTimezone();
+    if (tz && tz !== user.timezone) {
+      updateProfileRequest({ timezone: tz })
+        .then((payload) => setUser((current) => (current ? { ...current, timezone: payload.timezone ?? tz } : current)))
+        .catch((error) => console.warn('Could not save time zone', error));
+    }
+  }, [user]);
 
   const value = useMemo(
     () => ({

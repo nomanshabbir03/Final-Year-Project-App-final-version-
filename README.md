@@ -11,8 +11,8 @@ Everyone must use the same tool versions so installs are identical:
 | Node.js | 24.14.0 | `fyp-project-app/.nvmrc`, `package.json` engines |
 | npm | 11+ (ships with Node 24) | `package.json` engines |
 | Python | 3.14.3 | `fyp-backend/.python-version` |
-| Expo SDK | 57 | `fyp-project-app/package-lock.json` |
-| Expo Go (phone) | latest from App Store / Play Store (must support SDK 57) | |
+| Expo SDK | 58 | `fyp-project-app/package-lock.json` |
+| Expo Go (phone) | latest from App Store / Play Store (must support SDK 58) | |
 
 Exact package versions are locked by `fyp-project-app/package-lock.json` and `fyp-backend/requirements.txt`. Do not delete the lock file.
 

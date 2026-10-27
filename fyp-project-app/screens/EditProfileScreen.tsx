@@ -1,434 +1,185 @@
 import React, { useState } from 'react';
-import {
-  Alert,
-  Image,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  ActivityIndicator,
-  Platform,
-} from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../navigation/types';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
-import { Colors, Radius, Shadows } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
-import { api, toApiErrorMessage } from '../services/api';
+import { Colors, Font } from '../constants/theme';
+import {
+  ErrorText,
+  Field,
+  FormCard,
+  FormHeader,
+  Input,
+  PrimaryButton,
+  SecondaryButton,
+  moduleStyles,
+} from '../components/module/ModuleUI';
 
-type EditProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'EditProfile'>;
+const BIO_LIMIT = 280;
 
 export function EditProfileScreen() {
-  const navigation = useNavigation<EditProfileScreenNavigationProp>();
+  const navigation = useNavigation();
   const { user, updateProfile } = useAuth();
-  
-  const [fullName, setFullName] = useState(user?.fullName || '');
-  const [bio, setBio] = useState(user?.bio || '');
-  const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatarUrl || null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  const getUserInitial = () => {
-    return user?.fullName?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U';
+  const [fullName, setFullName] = useState(user?.fullName ?? '');
+  const [bio, setBio] = useState(user?.bio ?? '');
+  const [city, setCity] = useState(user?.selectedCity ?? '');
+  const [saving, setSaving] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const pickAvatar = async (fromCamera: boolean) => {
+    const permission = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', fromCamera ? 'Allow camera access to take a photo.' : 'Allow photo access to choose a picture.');
+      return;
+    }
+    const options: ImagePicker.ImagePickerOptions = { mediaTypes: 'images', allowsEditing: true, aspect: [1, 1], quality: 0.7 };
+    const result = fromCamera ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+    if (result.canceled || !result.assets[0]) return;
+
+    setAvatarBusy(true);
+    const res = await updateProfile({ avatarImageUri: result.assets[0].uri });
+    setAvatarBusy(false);
+    if (!res.ok) Alert.alert('Upload failed', res.error ?? 'Could not upload the photo.');
   };
 
-  const pickImage = async () => {
-    Alert.alert(
-      'Profile Picture',
-      'Choose an option',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Take Photo',
-          onPress: () => launchCamera(),
-        },
-        {
-          text: 'Choose from Gallery',
-          onPress: () => launchImageLibrary(),
-        },
-      ],
-    );
-  };
+  const changeAvatar = () =>
+    Alert.alert('Profile photo', undefined, [
+      { text: 'Take photo', onPress: () => pickAvatar(true) },
+      { text: 'Choose from gallery', onPress: () => pickAvatar(false) },
+      ...(user?.avatarUrl
+        ? [
+            {
+              text: 'Remove photo',
+              style: 'destructive' as const,
+              onPress: async () => {
+                setAvatarBusy(true);
+                const res = await updateProfile({ removeAvatar: true });
+                setAvatarBusy(false);
+                if (!res.ok) Alert.alert('Error', res.error ?? 'Could not remove the photo.');
+              },
+            },
+          ]
+        : []),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
 
-  const launchCamera = async () => {
+  const fillCityFromLocation = async () => {
+    setLocating(true);
     try {
-      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert('Permission required', 'Camera permission is required to take photos.');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Location off', 'Allow location access, or type your city.');
         return;
       }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setAvatarUri(result.assets[0].uri);
-        await uploadAvatar(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Camera error:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
-    }
-  };
-
-  const launchImageLibrary = async () => {
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert('Permission required', 'Gallery permission is required to select photos.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setAvatarUri(result.assets[0].uri);
-        await uploadAvatar(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Gallery error:', error);
-      Alert.alert('Error', 'Failed to select photo. Please try again.');
-    }
-  };
-
-  const uploadAvatar = async (imageUri: string) => {
-    setIsUploadingAvatar(true);
-    try {
-      const formData = new FormData();
-      formData.append('avatar_image', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: 'avatar.jpg',
-      } as any);
-
-      const response = await api.patch('/auth/profile/', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      if (response.data.avatar_url) {
-        setAvatarUri(response.data.avatar_url);
-        
-        // Update user using AuthContext updateProfile method
-        await updateProfile({ avatarUrl: response.data.avatar_url });
-      }
-    } catch (error) {
-      console.error('Avatar upload error:', error);
-      Alert.alert('Upload Failed', toApiErrorMessage(error, 'Failed to upload avatar'));
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [place] = await Location.reverseGeocodeAsync(pos.coords);
+      const found = place?.city || place?.subregion || place?.region;
+      if (found) setCity(found);
+      else Alert.alert('Not found', 'Could not work out your city. Please type it.');
+    } catch {
+      Alert.alert('Location error', 'Could not get your location. Please type your city.');
     } finally {
-      setIsUploadingAvatar(false);
+      setLocating(false);
     }
   };
 
   const handleSave = async () => {
+    setError(null);
     if (!fullName.trim()) {
-      Alert.alert('Validation Error', 'Full name is required.');
+      setError('Please enter your name.');
       return;
     }
-
-    setIsLoading(true);
-    try {
-      const response = await api.patch('/auth/profile/', {
-        full_name: fullName.trim(),
-        bio: bio.trim(),
-      });
-
-      if (response.data) {
-        // Update user using AuthContext updateProfile method
-        const updateResult = await updateProfile({
-          fullName: response.data.full_name || fullName.trim(),
-          bio: response.data.bio || bio.trim(),
-        });
-
-        if (updateResult.ok) {
-          Alert.alert(
-            'Success',
-            'Profile updated successfully!',
-            [
-              {
-                text: 'OK',
-                onPress: () => navigation.goBack(),
-              },
-            ]
-          );
-        } else {
-          Alert.alert('Update Failed', updateResult.error || 'Failed to update profile');
-        }
-      }
-    } catch (error) {
-      console.error('Profile update error:', error);
-      Alert.alert('Update Failed', toApiErrorMessage(error, 'Failed to update profile'));
-    } finally {
-      setIsLoading(false);
-    }
+    setSaving(true);
+    const res = await updateProfile({ fullName: fullName.trim(), bio: bio.trim(), selectedCity: city.trim() });
+    setSaving(false);
+    if (res.ok) navigation.goBack();
+    else setError(res.error ?? 'Could not update your profile.');
   };
 
+  const initials = (fullName || user?.email || '?')
+    .split(' ')
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Pressable 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Avatar Section */}
-        <View style={styles.avatarSection}>
-          <View style={styles.avatarContainer}>
-            {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Text style={styles.avatarInitial}>{getUserInitial()}</Text>
-              </View>
-            )}
-            <Pressable 
-              style={styles.cameraButton}
-              onPress={pickImage}
-              disabled={isUploadingAvatar}
-            >
-              {isUploadingAvatar ? (
-                <ActivityIndicator size="small" color={Colors.white} />
+    <SafeAreaView style={moduleStyles.container}>
+      <FormHeader title="Edit Profile" />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={moduleStyles.formContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.avatarWrap}>
+            <Pressable onPress={changeAvatar} disabled={avatarBusy}>
+              {user?.avatarUrl ? (
+                <Image source={{ uri: user.avatarUrl }} style={styles.avatar} />
               ) : (
-                <Ionicons name="camera" size={16} color={Colors.white} />
+                <View style={[styles.avatar, styles.avatarFallback]}>
+                  <Text style={styles.initials}>{initials}</Text>
+                </View>
               )}
+              <View style={styles.cameraBadge}>
+                {avatarBusy ? <ActivityIndicator size="small" color={Colors.white} /> : <Ionicons name="camera" size={16} color={Colors.white} />}
+              </View>
             </Pressable>
-          </View>
-          <Text style={styles.avatarHint}>Tap camera to change photo</Text>
-        </View>
-
-        {/* Form Fields */}
-        <View style={styles.formSection}>
-          <View style={styles.fieldContainer}>
-            <Text style={styles.fieldLabel}>Full Name</Text>
-            <TextInput
-              style={styles.textInput}
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="Enter your full name"
-              placeholderTextColor={Colors.textHint}
-              autoCapitalize="words"
-            />
+            <Text style={moduleStyles.muted}>Tap to change your photo</Text>
           </View>
 
-          <View style={styles.fieldContainer}>
-            <Text style={styles.fieldLabel}>Bio</Text>
-            <TextInput
-              style={[styles.textInput, styles.bioInput]}
-              value={bio}
-              onChangeText={setBio}
-              placeholder="Tell us about yourself..."
-              placeholderTextColor={Colors.textHint}
-              multiline
-              maxLength={280}
-              textAlignVertical="top"
-            />
-            <Text style={styles.characterCount}>
-              {bio.length}/280 characters
-            </Text>
-          </View>
+          <FormCard>
+            <Field label="Full name">
+              <Input placeholder="Your name" value={fullName} onChangeText={setFullName} maxLength={120} />
+            </Field>
+            <Field label="Email">
+              <Input value={user?.email ?? ''} editable={false} style={{ color: Colors.textSecondary }} />
+            </Field>
+            <Field label="Bio (optional)" hint={`${bio.length}/${BIO_LIMIT}`}>
+              <Input
+                placeholder="A few words about you"
+                multiline
+                value={bio}
+                onChangeText={(v) => setBio(v.slice(0, BIO_LIMIT))}
+              />
+            </Field>
+            <Field label="City" hint="Used for weather and prayer times.">
+              <Input placeholder="e.g. Lahore" value={city} onChangeText={setCity} />
+              <SecondaryButton label={locating ? 'Locating...' : 'Use my location'} icon="locate-outline" onPress={fillCityFromLocation} />
+            </Field>
+          </FormCard>
 
-          <View style={styles.fieldContainer}>
-            <Text style={styles.fieldLabel}>Email</Text>
-            <TextInput
-              style={[styles.textInput, styles.readOnlyInput]}
-              value={user?.email || ''}
-              editable={false}
-              placeholderTextColor={Colors.textHint}
-            />
-            <Text style={styles.readOnlyHint}>Email cannot be changed</Text>
+          <View style={{ paddingHorizontal: 16, gap: 8 }}>
+            <ErrorText text={error} />
+            <PrimaryButton label="Save Changes" onPress={handleSave} loading={saving} />
           </View>
-        </View>
-
-        {/* Save Button */}
-        <View style={styles.buttonContainer}>
-          <Pressable 
-            style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color={Colors.white} />
-            ) : (
-              <Text style={styles.saveButtonText}>Save Profile</Text>
-            )}
-          </Pressable>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgLight,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: Colors.surfaceLight,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primarySurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 20,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginHorizontal: 16,
-    letterSpacing: -0.3,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  avatarSection: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  avatarPlaceholder: {
-    backgroundColor: Colors.primarySurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitial: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  cameraButton: {
+  avatarWrap: { alignItems: 'center', gap: 8, marginTop: 4 },
+  avatar: { width: 104, height: 104, borderRadius: 52 },
+  avatarFallback: { backgroundColor: Colors.primarySurface, alignItems: 'center', justifyContent: 'center' },
+  initials: { fontFamily: Font.extrabold, fontSize: 34, color: Colors.primary },
+  cameraBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.textPrimary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: Colors.bgLight,
-  },
-  avatarHint: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  formSection: {
-    marginBottom: 32,
-  },
-  fieldContainer: {
-    marginBottom: 24,
-  },
-  fieldLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    marginBottom: 8,
-  },
-  textInput: {
-    backgroundColor: Colors.bgLight,
-    borderRadius: Radius.md,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: Colors.textPrimary,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  bioInput: {
-    height: 100,
-    paddingTop: 12,
-  },
-  characterCount: {
-    fontSize: 12,
-    color: Colors.textHint,
-    textAlign: 'right',
-    marginTop: 4,
-  },
-  readOnlyInput: {
-    backgroundColor: Colors.borderLight,
-    color: Colors.textSecondary,
-  },
-  readOnlyHint: {
-    fontSize: 12,
-    color: Colors.textHint,
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  buttonContainer: {
-    marginTop: 16,
-  },
-  saveButton: {
+    right: 2,
+    bottom: 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.button,
-  },
-  saveButtonDisabled: {
-    backgroundColor: Colors.borderLight,
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.white,
+    borderWidth: 2,
+    borderColor: Colors.white,
   },
 });

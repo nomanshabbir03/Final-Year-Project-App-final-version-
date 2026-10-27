@@ -100,7 +100,7 @@ export function OnboardingScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+      <StatusBar barStyle="dark-content" />
 
       {/* Soft orange glow behind the illustrations */}
       <View style={styles.glow} />

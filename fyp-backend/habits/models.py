@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 
 class Habit(models.Model):
@@ -27,6 +28,11 @@ class Habit(models.Model):
 	best_streak = models.PositiveIntegerField(default=0)
 	last_completed_date = models.DateField(null=True, blank=True)
 	reminder_time = models.TimeField(null=True, blank=True)
+	description = models.TextField(blank=True, default='')
+	# Weekly habits: how many check-ins make a successful week.
+	target_per_week = models.PositiveSmallIntegerField(default=1)
+	is_archived = models.BooleanField(default=False)
+	created_at = models.DateTimeField(default=timezone.now)
 
 	class Meta:
 		ordering = ['-id']

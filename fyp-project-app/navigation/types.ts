@@ -7,13 +7,9 @@ export type RootStackParamList = {
   Signup: undefined;
   ConfirmCode: { email?: string };
   MainTabs: undefined;
-  AddTask: undefined;
-  AddHabit: undefined;
-  AllHabits: undefined;
-  HabitAnalytics: undefined;
-  AllTasks: undefined;
-  TaskAnalytics: undefined;
-  Calendar: undefined;
+  AddTask: { taskId?: string } | undefined;
+  AddHabit: { habitId?: string; preset?: string } | undefined;
+  HabitDetail: { habitId: string };
   Reports: undefined;
   TaskDetail: { taskId: string };
   PrayerTime: undefined;
@@ -21,9 +17,7 @@ export type RootStackParamList = {
   AdhanSettings: undefined;
   Profile: undefined;
   Medication: undefined;
-  AddMedication: undefined;
-  MedicationHistory: undefined;
-  AllMedications: undefined;
+  AddMedication: { medicationId?: number } | undefined;
   More: undefined;
   EditProfile: undefined;
   Budget: undefined;
@@ -36,6 +30,11 @@ export type RootStackParamList = {
   FitnessGoals: undefined;
   FitnessProfile: undefined;
   Assistant: undefined;
+  Community: undefined;
+  ComposePost: { share?: boolean } | undefined;
+  PostDetail: { postId: number };
+  CreateChallenge: undefined;
+  ChallengeDetail: { challengeId: number };
 };
 
 export type MainTabParamList = {

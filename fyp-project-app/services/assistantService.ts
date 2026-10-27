@@ -7,7 +7,7 @@ export type ChatMessage = {
   content: string;
 };
 
-export type AssistantModule = 'tasks' | 'medications' | 'habits' | 'budget' | 'fitness';
+export type AssistantModule = 'tasks' | 'medications' | 'habits' | 'budget' | 'fitness' | 'weather' | 'prayer' | 'community';
 
 export type AssistantReply = {
   reply: string;
