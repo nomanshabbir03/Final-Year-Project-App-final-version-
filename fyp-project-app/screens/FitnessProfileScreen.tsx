@@ -1,373 +1,115 @@
-import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import React, { useCallback, useRef, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
-import {
-  getProfile,
-  updateProfile,
-  createOrUpdateGoal,
-  FitnessProfileDto,
-  Gender,
-} from '../services/fitnessService';
+import { useFocusEffect } from '@react-navigation/native';
+import { getProfile, updateProfile, createOrUpdateGoal, type FitnessProfileDto, type Gender } from '../services/fitnessService';
 import { toApiErrorMessage } from '../services/api';
-import { Colors, Radius, Shadows } from '../constants/theme';
-import type { RootStackParamList } from '../navigation/types';
-
-type FitnessProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
-
-const GENDER_OPTIONS: { value: Gender | ''; label: string }[] = [
-  { value: '', label: 'Prefer not to say' },
-  { value: 'male', label: 'Male' },
-  { value: 'female', label: 'Female' },
-  { value: 'other', label: 'Other' },
-];
+import { fromCanonicalMeasurement, toCanonicalMeasurements, validateFitnessMeasurements, type FitnessUnits } from '../services/fitnessCalculations';
+import { Card, CenterLoader, ChipRow, ErrorText, Field, FormCard, FormHeader, Input, PrimaryButton, SecondaryButton, Segmented, moduleStyles as s } from '../components/module/ModuleUI';
+import { Colors } from '../constants/theme';
 
 export function FitnessProfileScreen() {
-  const navigation = useNavigation<FitnessProfileScreenNavigationProp>();
-
   const [profile, setProfile] = useState<FitnessProfileDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [formGender, setFormGender] = useState<Gender | ''>('');
-  const [formHeightCm, setFormHeightCm] = useState('');
-  const [formWaterGoalMl, setFormWaterGoalMl] = useState('2000');
   const [formError, setFormError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUsingGoal, setIsUsingGoal] = useState(false);
-
-  const applyProfileToForm = (data: FitnessProfileDto) => {
-    setProfile(data);
-    setFormGender(data.gender ?? '');
-    setFormHeightCm(data.heightCm !== null ? String(Number(data.heightCm)) : '');
-    setFormWaterGoalMl(String(data.waterGoalMl));
-  };
-
-  const fetchProfile = async () => {
+  const [success, setSuccess] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [weight, setWeight] = useState('');
+  const [height, setHeight] = useState('');
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState<Gender | ''>('');
+  const [water, setWater] = useState('2000');
+  const [units, setUnits] = useState<FitnessUnits>('metric');
+  const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
+  const version = useRef(0);
+  const load = useCallback(async () => {
+    const request = ++version.current;
     try {
-      const data = await getProfile();
-      applyProfileToForm(data);
-      setError(null);
-    } catch (err) {
-      setError(toApiErrorMessage(err, 'Failed to load your fitness profile'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchProfile();
+      const p = await getProfile();
+      if (request !== version.current) return;
+      setProfile(p); setUnits(p.displayUnits);
+      setWeight(p.weightKg === null ? '' : fromCanonicalMeasurement(Number(p.weightKg), 'weight', p.displayUnits));
+      setHeight(p.heightCm === null ? '' : fromCanonicalMeasurement(Number(p.heightCm), 'height', p.displayUnits));
+      setAge(p.age === null ? '' : String(p.age)); setGender(p.gender ?? ''); setWater(String(p.waterGoalMl)); setError(null);
+      setDirty(false); setSuccess(false);
+    } catch (err) { if (request === version.current) setError(toApiErrorMessage(err, 'Could not load your fitness profile.')); }
+    finally { if (request === version.current) setLoading(false); }
   }, []);
-
-  const handleGoBack = () => navigation.goBack();
-
-  const handleSave = async () => {
-    setFormError(null);
-
-    let parsedHeight: number | null = null;
-    if (formHeightCm.trim()) {
-      parsedHeight = Number(formHeightCm);
-      if (Number.isNaN(parsedHeight) || parsedHeight <= 0) {
-        setFormError('Height must be greater than 0.');
-        return;
-      }
-    }
-
-    const trimmedGoal = formWaterGoalMl.trim();
-    const parsedGoal = Number(trimmedGoal);
-    if (!trimmedGoal || Number.isNaN(parsedGoal) || parsedGoal <= 0) {
-      setFormError('Daily water goal must be greater than 0.');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await updateProfile({
-        gender: formGender === '' ? null : formGender,
-        heightCm: parsedHeight,
-        waterGoalMl: parsedGoal,
-      });
-      // Refetch so suggested_step_goal/estimated_stride_cm reflect the values we just
-      // saved, rather than showing stale computed fields from before the save.
-      await fetchProfile();
-    } catch (err) {
-      setFormError(toApiErrorMessage(err, 'Failed to save your fitness profile'));
-    } finally {
-      setIsSaving(false);
-    }
+  useFocusEffect(useCallback(() => { void load(); return () => { version.current++; }; }, [load]));
+  const changeUnits = (next: FitnessUnits) => {
+    if (busy || next === units) return;
+    const canonical = toCanonicalMeasurements(Number(weight), Number(height), units);
+    if (weight.trim() && Number.isFinite(canonical.weightKg)) setWeight(fromCanonicalMeasurement(canonical.weightKg, 'weight', next));
+    if (height.trim() && Number.isFinite(canonical.heightCm)) setHeight(fromCanonicalMeasurement(canonical.heightCm, 'height', next));
+    setUnits(next);
+    setDirty(true); setSuccess(false);
   };
-
-  const handleUseAsStepGoal = async () => {
-    if (!profile?.suggestedStepGoal) return;
-    setIsUsingGoal(true);
+  const save = async () => {
+    if (saving.current || !profile) return;
+    const validation = validateFitnessMeasurements(weight, height, age, units);
+    setFormError(validation); setSuccess(false);
+    if (validation) return;
+    if (!/^\d+$/.test(water.trim()) || !Number.isSafeInteger(Number(water)) || Number(water) < 1 || Number(water) > 2147483647) { setFormError('Water goal must be a positive whole number of ml.'); return; }
+    saving.current = true; setBusy(true);
+    const canonical = toCanonicalMeasurements(Number(weight), Number(height), units);
     try {
-      await createOrUpdateGoal({
-        goalType: 'steps',
-        targetValue: String(profile.suggestedStepGoal),
-      });
-      Alert.alert('Goal Updated', `Your daily steps goal is now set to ${profile.suggestedStepGoal.toLocaleString()}.`);
-    } catch (err) {
-      Alert.alert('Error', toApiErrorMessage(err, 'Failed to set step goal'));
-    } finally {
-      setIsUsingGoal(false);
-    }
+      const saved = await updateProfile({ weightKg: weight.trim() ? canonical.weightKg : null,
+        heightCm: height.trim() ? canonical.heightCm : null, age: age.trim() ? Number(age) : null,
+        displayUnits: units, gender: gender || null, waterGoalMl: Number(water) });
+      setProfile(saved); setSuccess(true); setDirty(false); setError(null);
+      setWeight(saved.weightKg === null ? '' : fromCanonicalMeasurement(Number(saved.weightKg), 'weight', saved.displayUnits));
+      setHeight(saved.heightCm === null ? '' : fromCanonicalMeasurement(Number(saved.heightCm), 'height', saved.displayUnits));
+      setAge(saved.age === null ? '' : String(saved.age)); setWater(String(saved.waterGoalMl));
+    } catch (err) { setFormError(toApiErrorMessage(err, 'Could not save your profile. Your changes are not synced.')); }
+    finally { saving.current = false; setBusy(false); }
   };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const suggestedStepGoal = profile?.suggestedStepGoal ?? null;
-  const estimatedStrideCm = profile?.estimatedStrideCm ?? null;
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.modalHeader}>
-        <Pressable onPress={handleGoBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </Pressable>
-        <Text style={styles.modalTitle}>Fitness Profile</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {error ? <Text style={styles.errorBanner}>{error}</Text> : null}
-
-        <View style={styles.formCard}>
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Gender</Text>
-            <View style={styles.pickerWrap}>
-              <Picker selectedValue={formGender} onValueChange={(v) => setFormGender(v)}>
-                {GENDER_OPTIONS.map((option) => (
-                  <Picker.Item key={option.value || 'unset'} label={option.label} value={option.value} />
-                ))}
-              </Picker>
-            </View>
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Height (cm)</Text>
-            <TextInput
-              style={styles.formInput}
-              keyboardType="decimal-pad"
-              placeholder="e.g. 175"
-              placeholderTextColor="#9CA3AF"
-              value={formHeightCm}
-              onChangeText={setFormHeightCm}
-            />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Daily water goal (ml)</Text>
-            <TextInput
-              style={styles.formInput}
-              keyboardType="number-pad"
-              placeholder="e.g. 2000"
-              placeholderTextColor="#9CA3AF"
-              value={formWaterGoalMl}
-              onChangeText={setFormWaterGoalMl}
-            />
-          </View>
-
-          <Pressable style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} onPress={handleSave} disabled={isSaving}>
-            {isSaving ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={styles.saveButtonText}>Save</Text>}
-          </Pressable>
-          {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
-        </View>
-
-        <View style={styles.suggestionCard}>
-          <Text style={styles.suggestionTitle}>Suggested Step Goal</Text>
-          {suggestedStepGoal !== null ? (
-            <>
-              <Text style={styles.suggestionValue}>{suggestedStepGoal.toLocaleString()} steps/day</Text>
-              <Text style={styles.suggestionNote}>
-                Based on general guidance — adjust anytime in your Goals. This isn't a medical
-                or precise calculation, just a reasonable starting point.
-              </Text>
-              <Pressable
-                style={[styles.useGoalButton, isUsingGoal && styles.saveButtonDisabled]}
-                onPress={handleUseAsStepGoal}
-                disabled={isUsingGoal}
-              >
-                {isUsingGoal ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
-                ) : (
-                  <Text style={styles.useGoalButtonText}>Use this as my step goal</Text>
-                )}
-              </Pressable>
-            </>
-          ) : (
-            <Text style={styles.suggestionNote}>Set your gender and height above to get a suggested step goal.</Text>
-          )}
-
-          {estimatedStrideCm !== null ? (
-            <View style={styles.strideRow}>
-              <Text style={styles.suggestionTitle}>Estimated Stride Length</Text>
-              <Text style={styles.suggestionValue}>{estimatedStrideCm} cm</Text>
-              <Text style={styles.suggestionNote}>
-                A rough approximation for distance estimates, not a precise measurement.
-              </Text>
-            </View>
-          ) : null}
-        </View>
+  const handleUseSuggestion = async () => {
+    if (saving.current || !profile?.suggestedStepGoal) return;
+    saving.current = true; setBusy(true);
+    try { await createOrUpdateGoal({ goalType: 'steps', targetValue: String(profile.suggestedStepGoal) }); Alert.alert('Goal updated', 'Your suggested daily step target has been saved.'); }
+    catch (err) { setFormError(toApiErrorMessage(err, 'Could not update your step goal.')); }
+    finally { saving.current = false; setBusy(false); }
+  };
+  if (loading) return <SafeAreaView style={s.container}><CenterLoader /></SafeAreaView>;
+  return <SafeAreaView style={s.container}>
+    <FormHeader title="Fitness Profile" />
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        {error ? <Card><ErrorText text={error} /><SecondaryButton label="Retry" onPress={() => { void load(); }} /></Card> : null}
+        {success ? <Text accessibilityLiveRegion="polite" style={[s.bodyStrong, { color: Colors.success }]}>Fitness profile saved.</Text> : null}
+        {dirty ? <Text accessibilityLiveRegion="polite" style={s.muted}>Unsaved profile changes.</Text> : null}
+        <FormCard>
+          <Text style={s.bodyStrong}>Your fitness measurements</Text>
+          <Text style={s.body}>Add your own details for an approximate adult walking-energy estimate. Age is saved for your profile and supported range; it is not part of the energy equation.</Text>
+          <Segmented options={[{ key: 'metric', label: 'kg / cm' }, { key: 'imperial', label: 'lb / in' }]} value={units} onChange={changeUnits} />
+          <Field label={`Weight (${units === 'metric' ? 'kg' : 'lb'})`} hint="Supported range: 25–350 kg.">
+            <Input style={{ minHeight: 46 }} accessibilityLabel="Your weight" value={weight} onChangeText={(v) => { setWeight(v); setDirty(true); setSuccess(false); }} keyboardType="decimal-pad" placeholder={units === 'metric' ? 'e.g. 70.5' : 'e.g. 155.43'} editable={!busy && Boolean(profile)} />
+          </Field>
+          <Field label="Age (years)" hint="Whole number, 18–120. This model supports adults.">
+            <Input style={{ minHeight: 46 }} accessibilityLabel="Your age in years" value={age} onChangeText={(v) => { setAge(v); setDirty(true); setSuccess(false); }} keyboardType="number-pad" placeholder="e.g. 25" editable={!busy && Boolean(profile)} />
+          </Field>
+          <Field label={`Height (${units === 'metric' ? 'cm' : 'in'})`} hint="Supported range: 100–250 cm. Stored in centimeters.">
+            <Input style={{ minHeight: 46 }} accessibilityLabel="Your height" value={height} onChangeText={(v) => { setHeight(v); setDirty(true); setSuccess(false); }} keyboardType="decimal-pad" placeholder={units === 'metric' ? 'e.g. 175.5' : 'e.g. 69.09'} editable={!busy && Boolean(profile)} />
+          </Field>
+          <Field label="Daily water goal (ml)"><Input accessibilityLabel="Daily water goal in ml" value={water} onChangeText={(v) => { setWater(v); setDirty(true); setSuccess(false); }} keyboardType="number-pad" editable={!busy && Boolean(profile)} /></Field>
+          <Field label="Gender (optional)" hint="Preserved for the existing step-goal suggestion. Not used for calorie estimation.">
+            <ChipRow options={[{ key: '', label: 'Not set' }, { key: 'male', label: 'Male' }, { key: 'female', label: 'Female' }, { key: 'other', label: 'Other' }]} value={gender} onChange={(v) => { if (!busy) { setGender(v as Gender | ''); setDirty(true); setSuccess(false); } }} />
+          </Field>
+          <ErrorText text={formError} />
+          <PrimaryButton label="Save fitness profile" onPress={() => { void save(); }} loading={busy} disabled={!profile} />
+          <Text style={s.muted}>Incomplete details do not block the app. Saving measurements refreshes only today’s estimate; completed days retain their original inputs.</Text>
+        </FormCard>
+        <Card title="Walking estimate">
+          <Text style={s.body}>Step length ≈ 0.414 × height. Calories ≈ 0.5 × weight (kg) × estimated walking distance (km), above resting energy. Level-ground walking is a model assumption, not detected terrain. No speed or duration is invented.</Text>
+          <Text style={s.muted}>Running, stairs, hills, load carrying and individual gait can differ substantially. This is an approximation, not a measured total daily burn.</Text>
+          {profile?.estimatedStrideCm ? <Text style={s.body}>Estimated step length: {profile.estimatedStrideCm} cm per step.</Text> : null}
+        </Card>
+        <Card title="Suggested step goal">
+          {profile?.suggestedStepGoal ? <><Text style={s.bodyStrong}>{profile.suggestedStepGoal.toLocaleString()} steps/day</Text><Text style={s.body}>The existing editable suggestion is a general starting point, not a medical prescription.</Text><PrimaryButton label="Use suggested step goal" loading={busy} onPress={() => { void handleUseSuggestion(); }} /></> : <Text style={s.body}>Save height and optional gender to see the existing step-goal suggestion. You can always set your own target in Goals.</Text>}
+        </Card>
       </ScrollView>
-    </SafeAreaView>
-  );
+    </KeyboardAvoidingView>
+  </SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgLight,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: Colors.primary,
-    textAlign: 'center',
-    flex: 1,
-    letterSpacing: -0.3,
-  },
-  placeholder: {
-    width: 60,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-  },
-  errorBanner: {
-    marginBottom: 8,
-    color: Colors.error,
-    fontSize: 13,
-  },
-  formCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 16,
-    gap: 16,
-    marginBottom: 16,
-    ...Shadows.card,
-  },
-  formGroup: {
-    gap: 8,
-  },
-  formLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  pickerWrap: {
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.bgLight,
-  },
-  formInput: {
-    height: 42,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.bgLight,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    color: Colors.textPrimary,
-  },
-  saveButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-    ...Shadows.button,
-  },
-  saveButtonDisabled: {
-    backgroundColor: Colors.primaryLight,
-  },
-  saveButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  errorText: {
-    color: Colors.error,
-    fontWeight: '600',
-  },
-  suggestionCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 16,
-    gap: 6,
-    ...Shadows.card,
-  },
-  suggestionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  suggestionValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  suggestionNote: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  useGoalButton: {
-    backgroundColor: Colors.accentBlue,
-    borderRadius: 8,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 6,
-  },
-  useGoalButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  strideRow: {
-    marginTop: 12,
-    gap: 6,
-  },
-});

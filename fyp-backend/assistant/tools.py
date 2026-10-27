@@ -4,7 +4,8 @@ import datetime
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from django.db.models import Sum
+from django.db import transaction
+from django.db.models import F, Sum
 from django.utils import timezone
 
 from accounts.models import UserProfile
@@ -12,6 +13,9 @@ from accounts.serializers import merged_preferences
 from accounts.timezones import user_now, user_tz
 from budget.models import BudgetSettings, BudgetTransaction, CategoryBudget
 from fitness.models import FitnessGoal, FitnessRecord, WaterIntake
+from fitness.activity import save_activity
+from fitness.calories import effective_calories, refresh_current_estimate, steps_available
+from fitness.serializers import FitnessRecordSerializer
 from habits.models import Habit
 from habits.services import complete_habit as complete_habit_streak
 from community import services as community_services
@@ -346,13 +350,21 @@ def get_budget_summary(ctx, month=None):
 
 # ---------------------------------------------------------------- fitness
 def get_fitness_today(ctx):
-    today = timezone.localdate()
+    today = user_now(ctx.user).date()
     rec = FitnessRecord.objects.filter(user_id=ctx.user_id, date=today).first()
-    water = WaterIntake.objects.filter(user_id=ctx.user_id, date=today).first()
+    if rec:
+        refresh_current_estimate(rec, ctx.user)
+    # Keep the water tool's existing date convention; only activity/calorie dates change.
+    water = WaterIntake.objects.filter(user_id=ctx.user_id, date=timezone.localdate()).first()
+    effective, source = effective_calories(rec) if rec else (None, 'unavailable')
     return {
         'date': today.isoformat(),
         'steps': rec.steps if rec else 0,
         'calories_burned': str(rec.calories_burned) if rec else '0',
+        'estimated_active_calories': str(rec.estimated_active_calories) if rec and rec.estimated_active_calories is not None else None,
+        'effective_calories_burned': str(effective) if effective is not None else None,
+        'calorie_source': source,
+        'steps_available': steps_available(rec) if rec else False,
         'sleep_minutes': rec.sleep_duration_minutes if rec else None,
         'water_ml': water.amount_ml if water else 0,
         'goals': {g.goal_type: str(g.target_value)
@@ -371,15 +383,18 @@ def log_water(ctx, amount_ml):
 
 
 def log_fitness(ctx, steps=None, calories_burned=None, sleep_minutes=None):
-    rec, _ = FitnessRecord.objects.get_or_create(user_id=ctx.user_id, date=timezone.localdate())
-    if steps is not None:
-        rec.steps = int(steps)
-    if calories_burned is not None:
-        rec.calories_burned = Decimal(str(calories_burned))
-    if sleep_minutes is not None:
-        rec.sleep_duration_minutes = int(sleep_minutes)
-    rec.updated_at = timezone.now()
-    rec.save()
+    data = {key: value for key, value in [('steps', steps), ('calories_burned', calories_burned),
+                                        ('sleep_duration_minutes', sleep_minutes)] if value is not None}
+    serializer = FitnessRecordSerializer(data=data)
+    if not serializer.is_valid():
+        raise ToolError(str(serializer.errors))
+    user_id = ctx.user_id
+    activity_data = dict(serializer.validated_data)
+    activity_data.pop('date', None)  # The tool has no date input; use the user's local day below.
+    with transaction.atomic():
+        UserProfile.objects.filter(user=ctx.user).update(timezone=F('timezone'))
+        rec, _ = FitnessRecord.objects.get_or_create(user_id=user_id, date=user_now(ctx.user).date())
+        save_activity(rec, activity_data, ctx.user)
     return {'today': {'steps': rec.steps, 'calories_burned': str(rec.calories_burned),
                       'sleep_minutes': rec.sleep_duration_minutes}}
 

@@ -1,23 +1,30 @@
 import datetime
 from uuid import UUID
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
 
 from accounts.models import UserProfile
+from accounts.timezones import user_now, user_tz
 
-from .models import FitnessGoal, FitnessProfile, FitnessRecord, WaterIntake, WorkoutRoutine
+from .models import FitnessGoal, FitnessProfile, FitnessRecord, WaterIntake, WorkoutRoutine, FitnessAchievement, SleepRecord
+from .services import goal_progress, sleep_summary
+from .calories import refresh_current_estimate, refresh_today
+from .activity import save_activity
 from .serializers import (
     FitnessGoalSerializer,
     FitnessProfileSerializer,
     FitnessRecordSerializer,
     WaterIntakeSerializer,
     WorkoutRoutineSerializer,
+    SleepRecordSerializer,
 )
 
 
@@ -67,6 +74,10 @@ class FitnessRecordViewSet(viewsets.ModelViewSet):
         user_id = _get_request_user_id(self.request)
         data = dict(serializer.validated_data)
         date = data.pop('date', None)
+        if 'date' not in self.request.data:
+            # Ignore the model's eager UTC/default datetime for omitted dates. The
+            # authenticated user's local day is authoritative, including midnight.
+            date = user_now(self.request.user).date()
         # FitnessRecord.date is a DateField(default=timezone.now): when a POST omits `date`,
         # DRF fills validated_data['date'] from that model default *without* running it
         # through to_internal_value(), so it arrives here as a raw datetime, not a date —
@@ -74,20 +85,35 @@ class FitnessRecordViewSet(viewsets.ModelViewSet):
         # a datetime would leak into the row, breaking serialization on the way back out.
         # Normalize explicitly instead of assuming the default is already a date.
         if isinstance(date, datetime.datetime):
-            date = date.date()
-        date = date or timezone.now().date()
-        record, _ = FitnessRecord.objects.update_or_create(
-            user_id=user_id, date=date, defaults=data,
-        )
-        serializer.instance = record
+            date = date.astimezone(user_tz(self.request.user)).date()
+        date = date or user_now(self.request.user).date()
+        with transaction.atomic():
+            UserProfile.objects.filter(user=self.request.user).update(timezone=F('timezone'))
+            record, _ = FitnessRecord.objects.get_or_create(user_id=user_id, date=date)
+            self._save_activity(record, data)
+            serializer.instance = record
+
+    def _save_activity(self, record, data):
+        save_activity(record, data, self.request.user)
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            UserProfile.objects.filter(user=self.request.user).update(timezone=F('timezone'))
+            record = self.get_queryset().get(pk=serializer.instance.pk)
+            try:
+                self._save_activity(record, dict(serializer.validated_data))
+            except IntegrityError:
+                raise ValidationError('An activity record already exists for this date.')
+            serializer.instance = record
 
     @action(detail=False, methods=['get'], url_path='today')
     def today(self, request):
         user_id = _get_request_user_id(request)
         record, _ = FitnessRecord.objects.get_or_create(
-            user_id=user_id, date=timezone.now().date(),
+            user_id=user_id, date=user_now(request.user).date(),
             defaults={'steps': 0, 'calories_burned': 0},
         )
+        refresh_current_estimate(record, request.user)
         serializer = self.get_serializer(record)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -99,16 +125,16 @@ class FitnessRecordViewSet(viewsets.ModelViewSet):
             days = 7
         days = max(days, 1)
 
-        end_date = timezone.now().date()
+        end_date = user_now(request.user).date()
         start_date = end_date - timezone.timedelta(days=days - 1)
 
+        refresh_today(request.user, _get_request_user_id(request))
         records = (
             self.get_queryset()
             .filter(date__gte=start_date, date__lte=end_date)
             .order_by('date')
-            .values('date', 'steps', 'calories_burned', 'sleep_duration_minutes')
         )
-        return Response(list(records), status=status.HTTP_200_OK)
+        return Response(self.get_serializer(records, many=True).data, status=status.HTTP_200_OK)
 
 
 class FitnessGoalViewSet(viewsets.ModelViewSet):
@@ -124,7 +150,17 @@ class FitnessGoalViewSet(viewsets.ModelViewSet):
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() in ('true', '1'))
 
-        return queryset
+        return queryset.order_by('-is_active', '-created_at')
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        today = user_now(self.request.user).date()
+        refresh_today(self.request.user, _get_request_user_id(self.request))
+        context['period_records'] = list(FitnessRecord.objects.filter(
+            user_id=_get_request_user_id(self.request),
+            date__gte=today - datetime.timedelta(days=today.weekday()), date__lte=today,
+        ))
+        return context
 
     def perform_create(self, serializer):
         # Same reasoning as FitnessRecordViewSet.perform_create, keyed on
@@ -133,10 +169,33 @@ class FitnessGoalViewSet(viewsets.ModelViewSet):
         user_id = _get_request_user_id(self.request)
         data = dict(serializer.validated_data)
         goal_type = data.pop('goal_type', None)
-        goal, _ = FitnessGoal.objects.update_or_create(
-            user_id=user_id, goal_type=goal_type, defaults=data,
-        )
+        # Keep the existing profile's "use suggested goal" upsert contract. Archived
+        # goals are retained; a new active goal never overwrites an archived row.
+        with transaction.atomic():
+            goal, _ = FitnessGoal.objects.update_or_create(
+                user_id=user_id, goal_type=goal_type, is_active=True, defaults={**data, 'updated_at': timezone.now()},
+            )
         serializer.instance = goal
+
+    def perform_update(self, serializer):
+        try:
+            with transaction.atomic():
+                serializer.save(updated_at=timezone.now())
+        except IntegrityError:
+            raise ValidationError('An active goal already exists for this metric and period.')
+
+    @action(detail=False, methods=['post'])
+    def achievements(self, request):
+        notifications = []
+        refresh_today(request.user, _get_request_user_id(request))
+        for goal in self.get_queryset().filter(is_active=True):
+            progress = goal_progress(goal, request.user)
+            if progress['complete']:
+                _, created = FitnessAchievement.objects.get_or_create(goal=goal, period_start=progress['period_start'])
+                if created:
+                    notifications.append({'goal_id': str(goal.id), 'goal_type': goal.goal_type,
+                                          'period_start': progress['period_start']})
+        return Response(notifications)
 
 
 class FitnessProfileView(APIView):
@@ -156,7 +215,13 @@ class FitnessProfileView(APIView):
         profile = self._get_or_create(request)
         serializer = FitnessProfileSerializer(profile, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        with transaction.atomic():
+            UserProfile.objects.filter(user=request.user).update(timezone=F('timezone'))
+            # The instance may have been loaded before another device saved a field.
+            # Re-read under the owner lock so a water-only PATCH cannot restore old weight.
+            serializer.instance = FitnessProfile.objects.get(pk=profile.pk)
+            serializer.save(updated_at=timezone.now())
+            refresh_today(request.user, _get_request_user_id(request), serializer.instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def put(self, request):
@@ -249,7 +314,7 @@ class WorkoutRoutineViewSet(viewsets.ModelViewSet):
 
         # Same get_or_create-by-today's-date pattern as FitnessRecordViewSet.today().
         record, _ = FitnessRecord.objects.get_or_create(
-            user_id=user_id, date=timezone.now().date(),
+            user_id=user_id, date=user_now(request.user).date(),
             defaults={'steps': 0, 'calories_burned': 0},
         )
 
@@ -265,3 +330,35 @@ class WorkoutRoutineViewSet(viewsets.ModelViewSet):
 
         serializer = FitnessRecordSerializer(record)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class SleepHistoryPagination(PageNumberPagination):
+    page_size = 30
+
+
+class SleepRecordViewSet(viewsets.ModelViewSet):
+    serializer_class = SleepRecordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = SleepHistoryPagination
+
+    def get_queryset(self):
+        return SleepRecord.objects.filter(user_id=_get_request_user_id(self.request))
+
+    def _save(self, serializer):
+        user_id = _get_request_user_id(self.request)
+        with transaction.atomic():
+            # Serialize overlap checks/writes per owner, including SQLite (where
+            # select_for_update alone does not acquire a lock). No profile data changes.
+            UserProfile.objects.filter(user=self.request.user).update(timezone=F('timezone'))
+            serializer.validate_overlap(user_id)
+            serializer.save(user_id=user_id, updated_at=timezone.now())
+
+    def perform_create(self, serializer):
+        self._save(serializer)
+
+    def perform_update(self, serializer):
+        self._save(serializer)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        return Response(sleep_summary(request.user, _get_request_user_id(request)))

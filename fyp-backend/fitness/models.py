@@ -11,6 +11,12 @@ class FitnessRecord(models.Model):
     user_id = models.UUIDField(db_index=True)
     date = models.DateField(default=timezone.now)
     steps = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    steps_recorded_at = models.DateTimeField(null=True, blank=True)
+    steps_observed_at = models.DateTimeField(null=True, blank=True)
+    step_source = models.CharField(max_length=12, default='unknown', choices=[('unknown', 'Unknown'), ('manual', 'Manual'), ('sensor', 'Sensor')])
+    estimated_active_calories = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    calorie_estimate_metadata = models.JSONField(default=dict, blank=True)
+    manual_calories_recorded_at = models.DateTimeField(null=True, blank=True)
     calories_burned = models.DecimalField(
         max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)],
     )
@@ -54,7 +60,8 @@ class FitnessGoal(models.Model):
     class Meta:
         db_table = 'fitness_goals'
         constraints = [
-            models.UniqueConstraint(fields=['user_id', 'goal_type'], name='unique_fitness_goal_per_user_per_type'),
+            models.UniqueConstraint(fields=['user_id', 'goal_type'], condition=models.Q(is_active=True),
+                                    name='unique_active_fitness_goal_per_type'),
         ]
 
     def __str__(self):
@@ -79,6 +86,9 @@ class FitnessProfile(models.Model):
         max_digits=5, decimal_places=1, null=True, blank=True, validators=[MinValueValidator(Decimal('0.1'))],
     )
     water_goal_ml = models.IntegerField(default=2000, validators=[MinValueValidator(1)])
+    weight_kg = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    age = models.PositiveSmallIntegerField(null=True, blank=True)
+    display_units = models.CharField(max_length=8, default='metric', choices=[('metric', 'Metric'), ('imperial', 'Imperial')])
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     updated_at = models.DateTimeField(default=timezone.now, editable=False)
 
@@ -124,3 +134,28 @@ class WorkoutRoutine(models.Model):
 
     def __str__(self):
         return f"{self.user_id} - {self.name}"
+
+
+class FitnessAchievement(models.Model):
+    """A durable, once-per-goal/period notification receipt, including across devices."""
+    goal = models.ForeignKey(FitnessGoal, on_delete=models.CASCADE, related_name='achievements')
+    period_start = models.DateField()
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['goal', 'period_start'], name='unique_goal_achievement_period')]
+
+
+class SleepRecord(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField(db_index=True)
+    bedtime = models.DateTimeField()
+    wake_time = models.DateTimeField()
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        ordering = ['-wake_time', '-id']
+        indexes = [models.Index(fields=['user_id', 'wake_time'], name='sleep_user_wake_idx')]
+        constraints = [models.CheckConstraint(condition=models.Q(wake_time__gt=models.F('bedtime')),
+                                               name='sleep_wake_after_bedtime')]

@@ -6,6 +6,7 @@ from .views import (
     FitnessRecordViewSet,
     WaterIntakeViewSet,
     WorkoutRoutineViewSet,
+    SleepRecordViewSet,
 )
 
 record_list = FitnessRecordViewSet.as_view({'get': 'list', 'post': 'create'})
@@ -33,6 +34,10 @@ routine_detail = WorkoutRoutineViewSet.as_view({
 routine_log = WorkoutRoutineViewSet.as_view({'post': 'log'})
 
 urlpatterns = [
+    path('sleep/summary/', SleepRecordViewSet.as_view({'get': 'summary'}), name='fitness-sleep-summary'),
+    path('sleep/', SleepRecordViewSet.as_view({'get': 'list', 'post': 'create'}), name='fitness-sleep-list'),
+    path('sleep/<uuid:pk>/', SleepRecordViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'}), name='fitness-sleep-detail'),
+    path('goals/achievements/', FitnessGoalViewSet.as_view({'post': 'achievements'}), name='fitness-goal-achievements'),
     path('records/today/', record_today, name='fitness-records-today'),
     path('records/trends/', record_trends, name='fitness-records-trends'),
     path('records/', record_list, name='fitness-records-list-create'),

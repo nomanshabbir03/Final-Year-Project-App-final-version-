@@ -31,6 +31,7 @@ import { BudgetSettingsScreen } from '../screens/BudgetSettingsScreen';
 import { FitnessScreen } from '../screens/FitnessScreen';
 import { LogFitnessScreen } from '../screens/LogFitnessScreen';
 import { FitnessGoalsScreen } from '../screens/FitnessGoalsScreen';
+import { SleepTrackingScreen } from '../screens/SleepTrackingScreen';
 import { FitnessProfileScreen } from '../screens/FitnessProfileScreen';
 import { AssistantScreen } from '../screens/AssistantScreen';
 import { CommunityScreen } from '../screens/CommunityScreen';
@@ -131,6 +132,7 @@ export function AppNavigator() {
         <Stack.Screen name="Fitness" component={FitnessScreen} options={{ headerShown: false }} />
         <Stack.Screen name="LogFitness" component={LogFitnessScreen} options={{ headerShown: false }} />
         <Stack.Screen name="FitnessGoals" component={FitnessGoalsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SleepTracking" component={SleepTrackingScreen} options={{ headerShown: false }} />
         <Stack.Screen name="FitnessProfile" component={FitnessProfileScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Assistant" component={AssistantScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Community" component={CommunityScreen} options={{ headerShown: false }} />

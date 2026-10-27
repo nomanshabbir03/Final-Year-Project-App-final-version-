@@ -28,6 +28,7 @@ export type RootStackParamList = {
   Fitness: undefined;
   LogFitness: undefined;
   FitnessGoals: undefined;
+  SleepTracking: undefined;
   FitnessProfile: undefined;
   Assistant: undefined;
   Community: undefined;

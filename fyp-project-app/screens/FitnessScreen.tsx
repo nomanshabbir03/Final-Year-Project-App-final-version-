@@ -1,17 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, AppState, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import {
@@ -42,8 +32,13 @@ import {
   getTodayStepCount as getDeviceStepCountToday,
 } from '../services/pedometerService';
 import { toApiErrorMessage } from '../services/api';
-import { Colors, Radius, Shadows } from '../constants/theme';
+import { Colors, Font } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
+import { Card, CenterLoader, EmptyCard, EntryCard, ErrorText, Field, FormCard, HeroCard, HeroStat, HeroStats, Input, ModuleHeader, PillTabs, PrimaryButton, ProgressBar, SecondaryButton, SectionHeader, Segmented, moduleStyles as s } from '../components/module/ModuleUI';
+import { BarChart } from '../components/module/BarChart';
+import { formatSleepDuration, fromCanonicalMeasurement, localFitnessDate } from '../services/fitnessCalculations';
+import { GoalProgress } from '../components/fitness/GoalProgress';
+import { notifyFitnessAchievements } from '../components/fitness/achievements';
 
 // Device step count is deliberately a separate, informational number that requires an
 // explicit "Sync to log" tap before it touches the user's actual fitness record — see
@@ -87,6 +82,11 @@ const GOAL_LABELS: Record<string, string> = {
 
 export function FitnessScreen() {
   const navigation = useNavigation<FitnessScreenNavigationProp>();
+  const [tab, setTab] = useState<'overview' | 'workouts' | 'goals' | 'trends'>('overview');
+  const [stepSnapshot, setStepSnapshot] = useState<{ date: string; readAt: string } | null>(null);
+  const loadVersion = useRef(0);
+  const syncGuard = useRef(false);
+  const sensorVersion = useRef(0);
 
   const [today, setToday] = useState<FitnessRecordDto | null>(null);
   const [goals, setGoals] = useState<FitnessGoalDto[]>([]);
@@ -103,11 +103,8 @@ export function FitnessScreen() {
   const [isSyncingSteps, setIsSyncingSteps] = useState(false);
 
   const [routines, setRoutines] = useState<WorkoutRoutineDto[]>([]);
-  // Collapsed by default — this dashboard already stacks Steps/Device Steps/Water/Goals/
-  // Trends, and routines aren't a daily glance-and-go item the way those are, so keeping
-  // this section tucked away by default keeps the everyday scroll shorter while staying
-  // one tap away (see the "Layout decision" note in the task summary).
-  const [isRoutinesExpanded, setIsRoutinesExpanded] = useState(false);
+  // Existing routine CRUD/logging remains available in the Workout tab.
+
   const [isRoutineFormOpen, setIsRoutineFormOpen] = useState(false);
   const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
   const [formRoutineName, setFormRoutineName] = useState('');
@@ -118,6 +115,7 @@ export function FitnessScreen() {
   const [loggingRoutineId, setLoggingRoutineId] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
+    const requestVersion = ++loadVersion.current;
     try {
       const [todayRecord, activeGoals, trendRows, fitnessProfile, waterRecord, routineList] = await Promise.all([
         getToday(),
@@ -127,6 +125,7 @@ export function FitnessScreen() {
         getWaterToday(),
         getRoutines(),
       ]);
+      if (requestVersion !== loadVersion.current) return;
       setToday(todayRecord);
       setGoals(activeGoals);
       setTrends(trendRows);
@@ -134,11 +133,12 @@ export function FitnessScreen() {
       setWaterToday(waterRecord);
       setRoutines(routineList);
       setError(null);
+      await notifyFitnessAchievements(activeGoals);
     } catch (err) {
+      if (requestVersion !== loadVersion.current) return;
       setError(toApiErrorMessage(err, 'Failed to load fitness data'));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestVersion === loadVersion.current) { setLoading(false); setRefreshing(false); }
     }
   }, []);
 
@@ -151,22 +151,17 @@ export function FitnessScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      fetchAll();
-    });
-    return unsubscribe;
-  }, [navigation, fetchAll]);
+  useFocusEffect(useCallback(() => { void fetchAll(); return () => { loadVersion.current++; }; }, [fetchAll]));
 
   const checkDeviceSteps = useCallback(async () => {
+    const readingVersion = ++sensorVersion.current;
     // Runs the availability -> permission -> step-count chain as a single pass behind one
     // loading state, so the device-steps section doesn't flash through intermediate UI.
     setDeviceStepsStatus('checking');
+    setDeviceStepCount(null);
+    setStepSnapshot(null);
     const available = await isPedometerAvailable();
+    if (readingVersion !== sensorVersion.current) return;
     if (!available) {
       setDeviceStepsStatus('unsupported');
       return;
@@ -178,21 +173,47 @@ export function FitnessScreen() {
     // later call. If it comes back denied here, we stop and let the user retry manually
     // via the "Enable" button (handleEnableDeviceSteps) rather than asking again ourselves.
     const granted = await requestPedometerPermission();
+    if (readingVersion !== sensorVersion.current) return;
     if (!granted) {
       setDeviceStepsStatus('permission-denied');
       return;
     }
 
+    const observedAt = new Date();
+    const began = localFitnessDate(observedAt);
     const count = await getDeviceStepCountToday();
+    if (readingVersion !== sensorVersion.current) return;
+    const captured = new Date();
+    if (count === null || !Number.isSafeInteger(count) || count < 0 || began !== localFitnessDate(captured)) {
+      setDeviceStepsStatus('unusable'); return;
+    }
     setDeviceStepCount(count);
-    setDeviceStepsStatus(count === null ? 'unusable' : 'ready');
+    setStepSnapshot({ date: began, readAt: observedAt.toISOString() });
+    setDeviceStepsStatus('ready');
   }, []);
 
   useEffect(() => {
     // Mount-only (not tied to the `focus` listener like fetchAll) — this is what keeps
     // the permission check to once per screen visit rather than once per re-focus.
-    checkDeviceSteps();
+    void Promise.resolve().then(checkDeviceSteps);
   }, [checkDeviceSteps]);
+
+  useEffect(() => {
+    const foreground = AppState.addEventListener('change', (state) => {
+      if (state === 'active') { sensorVersion.current++; setDeviceStepCount(null); setStepSnapshot(null); setDeviceStepsStatus('unusable'); if (navigation.isFocused()) void fetchAll(); }
+    });
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      timer = setTimeout(() => {
+        sensorVersion.current++;
+        setDeviceStepCount(null); setStepSnapshot(null); setDeviceStepsStatus('unusable'); if (navigation.isFocused()) void fetchAll(); schedule();
+      }, midnight.getTime() - now.getTime() + 1000);
+    };
+    schedule();
+    return () => { foreground.remove(); clearTimeout(timer); };
+  }, [fetchAll, navigation]);
 
   const handleEnableDeviceSteps = () => {
     // A user-initiated retry, not an automatic re-prompt — safe to call requestPermission()
@@ -232,16 +253,31 @@ export function FitnessScreen() {
   };
 
   const handleSyncSteps = () => {
-    if (deviceStepCount === null || isSyncingSteps) return;
+    if (deviceStepCount === null || syncGuard.current) return;
+    if (!stepSnapshot || stepSnapshot.date !== localFitnessDate() || stepSnapshot.date !== today?.date) {
+      setError('This snapshot belongs to another day. Refresh your daily record and phone snapshot.');
+      setDeviceStepCount(null); setStepSnapshot(null); setDeviceStepsStatus('unusable'); void fetchAll(); return;
+    }
 
     const syncNow = async () => {
+      if (syncGuard.current) return;
+      syncGuard.current = true;
       setIsSyncingSteps(true);
       try {
-        const updated = await upsertToday({ steps: deviceStepCount });
+        const updated = await upsertToday({ date: stepSnapshot.date, steps: deviceStepCount, stepSource: 'sensor', stepsObservedAt: stepSnapshot.readAt });
         setToday(updated);
+        try {
+          const [activeGoals, trendRows] = await Promise.all([getGoals(true), getTrends(7)]);
+          setGoals(activeGoals);
+          setTrends(trendRows);
+          await notifyFitnessAchievements(activeGoals);
+        } catch (err) {
+          setError(toApiErrorMessage(err, 'Steps saved, but goal progress could not refresh. Pull to retry.'));
+        }
       } catch (err) {
         Alert.alert('Error', toApiErrorMessage(err, 'Failed to sync your step count'));
       } finally {
+        syncGuard.current = false;
         setIsSyncingSteps(false);
       }
     };
@@ -271,7 +307,7 @@ export function FitnessScreen() {
     setFormExercises([EMPTY_EXERCISE_ROW]);
     setFormRoutineNameError(null);
     setFormError(null);
-    setIsRoutinesExpanded(true);
+
     setIsRoutineFormOpen(true);
   };
 
@@ -402,951 +438,100 @@ export function FitnessScreen() {
     }
   };
 
-  const isFirstTime =
-    today !== null &&
-    today.steps === 0 &&
-    Number(today.caloriesBurned) === 0 &&
-    !today.sleepDurationMinutes &&
-    (!today.workoutLog || today.workoutLog.length === 0) &&
-    trends.every((row) => row.steps === 0 && row.caloriesBurned === 0);
-
-  const getGoalProgress = (goal: FitnessGoalDto): { current: number; target: number } | null => {
-    if (!today) return null;
-    if (goal.goalType === 'steps') {
-      return { current: today.steps, target: Number(goal.targetValue) };
-    }
-    if (goal.goalType === 'calories') {
-      return { current: Number(today.caloriesBurned), target: Number(goal.targetValue) };
-    }
-    return null;
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading fitness data...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        contentContainerStyle={styles.scrollContent}
-      >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Fitness</Text>
-            <Text style={styles.subtitle}>Track your daily activity.</Text>
-          </View>
-          <View style={styles.headerButtons}>
-            <Pressable style={styles.goalsButton} onPress={handleProfile}>
-              <Text style={styles.goalsButtonText}>👤</Text>
-            </Pressable>
-            <Pressable style={styles.goalsButton} onPress={handleGoals}>
-              <Text style={styles.goalsButtonText}>🎯</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {error ? <Text style={styles.errorBanner}>{error}</Text> : null}
-
-        {isFirstTime ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🏃</Text>
-            <Text style={styles.emptyText}>Log your first entry to start tracking your activity.</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{today?.steps ?? 0}</Text>
-            <Text style={styles.statLabel}>Steps</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{today ? Number(today.caloriesBurned).toFixed(0) : 0}</Text>
-            <Text style={styles.statLabel}>Calories</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{today?.sleepDurationMinutes ?? '—'}</Text>
-            <Text style={styles.statLabel}>Sleep (min)</Text>
-          </View>
-        </View>
-
-        {today?.workoutLog && today.workoutLog.length > 0 ? (
-          <Text style={styles.workoutLogCaption}>
-            {today.workoutLog.length} exercise{today.workoutLog.length === 1 ? '' : 's'} logged today
-          </Text>
-        ) : null}
-
-        <Pressable style={styles.logButton} onPress={handleLogToday}>
-          <Text style={styles.logButtonText}>+ Log Today</Text>
-        </Pressable>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Device Steps</Text>
-          <View style={styles.deviceStepsCard}>
-            {deviceStepsStatus === 'checking' ? (
-              <View style={styles.deviceStepsLoadingRow}>
-                <ActivityIndicator size="small" color={Colors.primary} />
-                <Text style={styles.deviceStepsNote}>Checking your phone's step count...</Text>
-              </View>
-            ) : null}
-
-            {deviceStepsStatus === 'unsupported' ? (
-              <Text style={styles.deviceStepsNote}>Automatic step counting isn't available on this device.</Text>
-            ) : null}
-
-            {deviceStepsStatus === 'permission-denied' ? (
-              <>
-                <Text style={styles.deviceStepsNote}>
-                  Allow motion & fitness access to see steps detected by your phone.
-                </Text>
-                <Pressable style={styles.enableButton} onPress={handleEnableDeviceSteps}>
-                  <Text style={styles.enableButtonText}>Enable</Text>
-                </Pressable>
-              </>
-            ) : null}
-
-            {deviceStepsStatus === 'unusable' ? (
-              <Text style={styles.deviceStepsNote}>Couldn't read your phone's step count right now.</Text>
-            ) : null}
-
-            {deviceStepsStatus === 'ready' && deviceStepCount !== null ? (
-              <>
-                <Text style={styles.deviceStepsValue}>Steps detected today: {deviceStepCount.toLocaleString()}</Text>
-                <Text style={styles.deviceStepsNote}>
-                  Detected by your phone's motion sensor — separate from your logged steps above until you sync.
-                </Text>
-                <Pressable
-                  style={[styles.syncButton, isSyncingSteps && styles.syncButtonDisabled]}
-                  onPress={handleSyncSteps}
-                  disabled={isSyncingSteps}
-                >
-                  {isSyncingSteps ? (
-                    <ActivityIndicator size="small" color={Colors.white} />
-                  ) : (
-                    <Text style={styles.syncButtonText}>Sync to log</Text>
-                  )}
-                </Pressable>
-              </>
-            ) : null}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.waterHeaderRow}>
-            <Text style={styles.sectionTitle}>Water</Text>
-            <Pressable onPress={handleProfile}>
-              <Text style={styles.waterGoalLink}>Adjust goal</Text>
-            </Pressable>
-          </View>
-          <View style={styles.waterCard}>
-            <Text style={styles.waterAmountText}>
-              {(waterToday?.amountMl ?? 0).toLocaleString()} / {(profile?.waterGoalMl ?? 2000).toLocaleString()} ml
-            </Text>
-            <View style={styles.progressBar}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${Math.min(
-                      ((waterToday?.amountMl ?? 0) / (profile?.waterGoalMl ?? 2000)) * 100,
-                      100
-                    )}%`,
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.waterQuickAddRow}>
-              <Pressable
-                style={[styles.waterQuickAddButton, isLoggingWater && styles.waterQuickAddButtonDisabled]}
-                onPress={() => handleQuickAddWater(250)}
-                disabled={isLoggingWater}
-              >
-                <Text style={styles.waterQuickAddButtonText}>+250ml</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.waterQuickAddButton, isLoggingWater && styles.waterQuickAddButtonDisabled]}
-                onPress={() => handleQuickAddWater(500)}
-                disabled={isLoggingWater}
-              >
-                <Text style={styles.waterQuickAddButtonText}>+500ml</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Pressable
-            style={styles.collapsibleHeaderRow}
-            onPress={() => setIsRoutinesExpanded((expanded) => !expanded)}
-          >
-            <Text style={styles.sectionTitle}>
-              Workout Routines{routines.length > 0 ? ` (${routines.length})` : ''}
-            </Text>
-            <Text style={styles.collapseChevron}>{isRoutinesExpanded ? '▾' : '▸'}</Text>
-          </Pressable>
-
-          {isRoutinesExpanded ? (
-            <View style={styles.routinesCard}>
-              {routines.length === 0 && !isRoutineFormOpen ? (
-                <View style={styles.routinesEmptyState}>
-                  <Text style={styles.routinesEmptyText}>
-                    No routines yet — save your favorite workouts to log them in one tap.
-                  </Text>
-                  <Pressable style={styles.newRoutineButton} onPress={handleOpenNewRoutineForm}>
-                    <Text style={styles.newRoutineButtonText}>+ New Routine</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-
-              {routines.map((routine) => (
-                <View key={routine.id} style={styles.routineRow}>
-                  <Pressable style={styles.routineInfo} onPress={() => handleOpenEditRoutineForm(routine)}>
-                    <Text style={styles.routineName}>{routine.name}</Text>
-                    <Text style={styles.routineMeta}>
-                      {routine.exercises.length} exercise{routine.exercises.length === 1 ? '' : 's'}
-                    </Text>
-                  </Pressable>
-                  <View style={styles.routineActions}>
-                    <Pressable
-                      style={[
-                        styles.logRoutineButton,
-                        loggingRoutineId === routine.id && styles.logRoutineButtonDisabled,
-                      ]}
-                      onPress={() => handleLogRoutine(routine)}
-                      disabled={loggingRoutineId === routine.id}
-                    >
-                      {loggingRoutineId === routine.id ? (
-                        <ActivityIndicator size="small" color={Colors.white} />
-                      ) : (
-                        <Text style={styles.logRoutineButtonText}>Log</Text>
-                      )}
-                    </Pressable>
-                    <Pressable style={styles.deleteRoutineButton} onPress={() => handleDeleteRoutine(routine)}>
-                      <Text style={styles.deleteRoutineButtonText}>✕</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-
-              {routines.length > 0 && !isRoutineFormOpen ? (
-                <Pressable style={styles.newRoutineRow} onPress={handleOpenNewRoutineForm}>
-                  <Text style={styles.newRoutineRowText}>+ New Routine</Text>
-                </Pressable>
-              ) : null}
-
-              {isRoutineFormOpen ? (
-                <View style={styles.routineFormCard}>
-                  <Text style={styles.routineFormTitle}>{editingRoutineId ? 'Edit Routine' : 'New Routine'}</Text>
-
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="Routine name"
-                    placeholderTextColor="#9CA3AF"
-                    value={formRoutineName}
-                    onChangeText={(text) => {
-                      setFormRoutineName(text);
-                      if (formRoutineNameError) setFormRoutineNameError(null);
-                    }}
-                  />
-                  {formRoutineNameError ? <Text style={styles.errorText}>{formRoutineNameError}</Text> : null}
-
-                  {formExercises.map((row, index) => (
-                    <View key={index} style={styles.exerciseFormRow}>
-                      <View style={styles.exerciseFormTopRow}>
-                        <TextInput
-                          style={[styles.formInput, styles.exerciseNameInput]}
-                          placeholder="Exercise name"
-                          placeholderTextColor="#9CA3AF"
-                          value={row.exercise}
-                          onChangeText={(text) => handleExerciseTextChange(index, 'exercise', text)}
-                        />
-                        <Pressable style={styles.removeRowButton} onPress={() => handleRemoveExerciseRow(index)}>
-                          <Text style={styles.removeRowButtonText}>✕</Text>
-                        </Pressable>
-                      </View>
-
-                      <View style={styles.modeToggleRow}>
-                        <Pressable
-                          style={[styles.modeChip, row.mode === 'reps' && styles.modeChipActive]}
-                          onPress={() => handleExerciseModeChange(index, 'reps')}
-                        >
-                          <Text style={[styles.modeChipText, row.mode === 'reps' && styles.modeChipTextActive]}>
-                            Sets & Reps
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          style={[styles.modeChip, row.mode === 'duration' && styles.modeChipActive]}
-                          onPress={() => handleExerciseModeChange(index, 'duration')}
-                        >
-                          <Text style={[styles.modeChipText, row.mode === 'duration' && styles.modeChipTextActive]}>
-                            Duration
-                          </Text>
-                        </Pressable>
-                      </View>
-
-                      {row.mode === 'reps' ? (
-                        <View style={styles.exerciseFormBottomRow}>
-                          <TextInput
-                            style={[styles.formInput, styles.exerciseSmallInput]}
-                            placeholder="Sets"
-                            placeholderTextColor="#9CA3AF"
-                            keyboardType="number-pad"
-                            value={row.sets}
-                            onChangeText={(text) => handleExerciseTextChange(index, 'sets', text)}
-                          />
-                          <TextInput
-                            style={[styles.formInput, styles.exerciseSmallInput]}
-                            placeholder="Reps"
-                            placeholderTextColor="#9CA3AF"
-                            keyboardType="number-pad"
-                            value={row.reps}
-                            onChangeText={(text) => handleExerciseTextChange(index, 'reps', text)}
-                          />
-                        </View>
-                      ) : (
-                        <View style={styles.exerciseFormBottomRow}>
-                          <TextInput
-                            style={[styles.formInput, styles.exerciseSmallInput]}
-                            placeholder="Duration (min)"
-                            placeholderTextColor="#9CA3AF"
-                            keyboardType="number-pad"
-                            value={row.durationMin}
-                            onChangeText={(text) => handleExerciseTextChange(index, 'durationMin', text)}
-                          />
-                        </View>
-                      )}
-                    </View>
-                  ))}
-
-                  <Pressable style={styles.addExerciseButton} onPress={handleAddExerciseRow}>
-                    <Text style={styles.addExerciseButtonText}>+ Add Exercise</Text>
-                  </Pressable>
-
-                  {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
-
-                  <View style={styles.routineFormActions}>
-                    <Pressable style={styles.cancelButton} onPress={handleCloseRoutineForm}>
-                      <Text style={styles.cancelButtonText}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.saveRoutineButton, isSavingRoutine && styles.saveButtonDisabled]}
-                      onPress={handleSaveRoutine}
-                      disabled={isSavingRoutine}
-                    >
-                      {isSavingRoutine ? (
-                        <ActivityIndicator size="small" color={Colors.white} />
-                      ) : (
-                        <Text style={styles.saveRoutineButtonText}>Save Routine</Text>
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-
-        {goals.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Active Goals</Text>
-            {goals.map((goal) => {
-              const progress = getGoalProgress(goal);
-              return (
-                <View key={goal.id} style={styles.goalCard}>
-                  <Text style={styles.goalLabel}>{GOAL_LABELS[goal.goalType] ?? goal.goalType}</Text>
-                  {progress ? (
-                    <>
-                      <Text style={styles.goalMeta}>
-                        {progress.current.toLocaleString()} / {progress.target.toLocaleString()} {goal.unit}
-                      </Text>
-                      <View style={styles.progressBar}>
-                        <View
-                          style={[
-                            styles.progressFill,
-                            { width: `${Math.min((progress.current / progress.target) * 100, 100)}%` },
-                          ]}
-                        />
-                      </View>
-                    </>
-                  ) : (
-                    <Text style={styles.goalMeta}>
-                      Target: {Number(goal.targetValue).toLocaleString()} {goal.unit}
-                      {'  '}(progress bar coming in Pass 2)
-                    </Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Last 7 Days</Text>
-          <View style={styles.trendsCard}>
-            <View style={styles.trendsHeaderRow}>
-              <Text style={[styles.trendsCell, styles.trendsHeaderText]}>Date</Text>
-              <Text style={[styles.trendsCell, styles.trendsHeaderText]}>Steps</Text>
-              <Text style={[styles.trendsCell, styles.trendsHeaderText]}>Cal</Text>
-              <Text style={[styles.trendsCell, styles.trendsHeaderText]}>Sleep</Text>
-            </View>
-            {trends.length === 0 ? (
-              <Text style={styles.trendsEmptyText}>No data yet.</Text>
-            ) : (
-              trends.map((row) => (
-                <View key={row.date} style={styles.trendsRow}>
-                  <Text style={styles.trendsCell}>{row.date.slice(5)}</Text>
-                  <Text style={styles.trendsCell}>{row.steps}</Text>
-                  <Text style={styles.trendsCell}>{row.caloriesBurned.toFixed(0)}</Text>
-                  <Text style={styles.trendsCell}>{row.sleepDurationMinutes ?? '—'}</Text>
-                </View>
-              ))
-            )}
-          </View>
-        </View>
+  const estimate = today?.estimatedActiveCalories;
+  const estimatedLabel = estimate === null || estimate === undefined ? '— kcal' : `${Number(estimate).toLocaleString(undefined, { maximumFractionDigits: 1 })} kcal`;
+  const incomplete = !profile?.calorieProfileReady;
+  const displayedWeight = profile?.weightKg ? `${fromCanonicalMeasurement(Number(profile.weightKg), 'weight', profile.displayUnits)} ${profile.displayUnits === 'imperial' ? 'lb' : 'kg'}` : 'Weight missing';
+  const displayedHeight = profile?.heightCm ? `${fromCanonicalMeasurement(Number(profile.heightCm), 'height', profile.displayUnits)} ${profile.displayUnits === 'imperial' ? 'in' : 'cm'}` : 'Height missing';
+  return <SafeAreaView style={s.container}>
+    <ModuleHeader title="Fitness" subtitle="Your activity, at a glance." actions={[
+      { icon: 'flag-outline', label: 'Fitness goals', onPress: handleGoals },
+      { icon: 'settings-outline', label: 'Edit fitness profile', onPress: handleProfile },
+    ]} />
+    <PillTabs tabs={[{ key: 'overview', label: 'Today' }, { key: 'workouts', label: 'Workout' }, { key: 'goals', label: 'Goals' }, { key: 'trends', label: 'Trends' }]} value={tab} onChange={setTab} />
+    {loading ? <CenterLoader /> : <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={s.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
+        {error ? <Card><ErrorText text={error} /><Text style={s.muted}>Saved values may be out of date. Retry to refresh.</Text><SecondaryButton label="Retry" onPress={handleRefresh} /></Card> : null}
+        {tab === 'overview' ? <>
+          <HeroCard label="Estimated active calories" value={estimatedLabel}>
+            <Text style={{ color: Colors.white, fontFamily: Font.medium, fontSize: 13 }}>{today?.date ?? 'Daily record unavailable'} · walking energy above rest</Text>
+            <HeroStats>
+              <HeroStat icon="walk-outline" label="Steps" value={today?.stepsAvailable ? today.steps.toLocaleString() : 'No data'} />
+              <HeroStat icon="scale-outline" label={`Weight (${profile?.displayUnits === 'imperial' ? 'lb' : 'kg'})`} value={profile?.weightKg ? fromCanonicalMeasurement(Number(profile.weightKg), 'weight', profile.displayUnits) : 'Not set'} />
+            </HeroStats>
+            <HeroStats>
+              <HeroStat icon="moon-outline" label="Sleep" value={today?.sleepDurationMinutes !== null && today?.sleepDurationMinutes !== undefined ? formatSleepDuration(today.sleepDurationMinutes) : 'No data'} />
+            </HeroStats>
+          </HeroCard>
+          {incomplete ? <Card title="Set up your fitness profile"><Text style={s.body}>Add your own weight, age and height. Setup is optional for the rest of the app.</Text><PrimaryButton label="Edit fitness profile" icon="person-outline" onPress={handleProfile} /></Card>
+            : <EntryCard icon="person-outline" title="Edit fitness profile" meta={`${displayedWeight} · ${displayedHeight} · ${profile?.age} years`} onPress={handleProfile} />}
+          <PrimaryButton label="Log Today" icon="add" onPress={handleLogToday} />
+          {today?.workoutLog?.length ? <Text style={s.muted}>{today.workoutLog.length} exercises logged today.</Text> : null}
+          <EntryCard icon="moon-outline" title="Sleep Tracking" meta="Record bedtime, wake-up time and sleep history" onPress={() => navigation.navigate('SleepTracking')} />
+          <Card title="Device steps">
+            {deviceStepsStatus === 'checking' ? <Text style={s.body}>Checking your phone’s step count…</Text> : null}
+            {deviceStepsStatus === 'unsupported' ? <Text style={s.body}>Automatic step counting is not supported on this device. Manual logging is available.</Text> : null}
+            {deviceStepsStatus === 'permission-denied' ? <><Text style={s.body}>Motion & fitness permission is required to read the phone’s steps. Logged data is preserved.</Text><SecondaryButton label="Enable motion access" onPress={handleEnableDeviceSteps} /></> : null}
+            {deviceStepsStatus === 'unusable' ? <Text style={s.body}>No usable phone snapshot. Your saved steps have not been changed.</Text> : null}
+            {deviceStepsStatus === 'ready' && deviceStepCount !== null ? <>
+              <Text style={s.bodyStrong}>{deviceStepCount.toLocaleString()} steps detected</Text>
+              <Text style={s.body}>Snapshot {stepSnapshot?.date} at {stepSnapshot ? new Date(stepSnapshot.readAt).toLocaleTimeString() : 'unknown time'}. Sync replaces the day’s total; it does not add steps or calories again.</Text>
+              <PrimaryButton label="Sync to log" onPress={handleSyncSteps} loading={isSyncingSteps} />
+            </> : null}
+            <SecondaryButton label="Refresh phone snapshot" onPress={() => { if (deviceStepsStatus !== 'checking') void checkDeviceSteps(); }} />
+          </Card>
+          <Card title="Water" right={<SecondaryButton label="Adjust goal" onPress={handleProfile} />}>
+            <Text style={s.bodyStrong}>{waterToday?.amountMl.toLocaleString() ?? '—'} / {profile?.waterGoalMl.toLocaleString() ?? '—'} ml</Text>
+            <ProgressBar pct={profile?.waterGoalMl && waterToday ? waterToday.amountMl / profile.waterGoalMl * 100 : 0} />
+            <View style={s.grid}><PrimaryButton label="+250 ml" loading={isLoggingWater} disabled={!waterToday} onPress={() => { void handleQuickAddWater(250); }} style={{ flex: 1 }} /><PrimaryButton label="+500 ml" disabled={isLoggingWater || !waterToday} onPress={() => { void handleQuickAddWater(500); }} style={{ flex: 1 }} /></View>
+          </Card>
+        </> : null}
+        {tab === 'workouts' ? <>
+          <SectionHeader title="Workout routines" />
+          <Text style={s.body}>Save, edit and log your existing exercise routines. Exercise logs are not counted as completed workout sessions.</Text>
+          {!routines.length ? <EmptyCard text="No routines yet. Add your first routine below." icon="barbell-outline" /> : null}
+          {routines.map((routine) => <Card key={routine.id} title={routine.name}>
+            <Text style={s.body}>{routine.exercises.length} exercises</Text>
+            <PrimaryButton label="Log routine today" onPress={() => { void handleLogRoutine(routine); }} loading={loggingRoutineId === routine.id} disabled={Boolean(loggingRoutineId)} />
+            <SecondaryButton label="Edit routine" onPress={() => { if (!isSavingRoutine) handleOpenEditRoutineForm(routine); }} />
+            <SecondaryButton label="Delete routine" danger onPress={() => handleDeleteRoutine(routine)} />
+          </Card>)}
+          {!isRoutineFormOpen ? <PrimaryButton label="New routine" icon="add" onPress={handleOpenNewRoutineForm} /> : <FormCard>
+            <Text style={s.bodyStrong}>{editingRoutineId ? 'Edit routine' : 'New routine'}</Text>
+            <Field label="Routine name"><Input accessibilityLabel="Routine name" value={formRoutineName} onChangeText={setFormRoutineName} editable={!isSavingRoutine} /></Field>
+            <ErrorText text={formRoutineNameError} />
+            {formExercises.map((row, index) => <View key={index} style={{ gap: 10 }}>
+              <Field label={`Exercise ${index + 1}`}><Input accessibilityLabel={`Exercise ${index + 1} name`} value={row.exercise} onChangeText={(v) => handleExerciseTextChange(index, 'exercise', v)} editable={!isSavingRoutine} /></Field>
+              <Segmented options={[{ key: 'reps', label: 'Sets & reps' }, { key: 'duration', label: 'Duration' }]} value={row.mode} onChange={(v) => { if (!isSavingRoutine) handleExerciseModeChange(index, v); }} />
+              {row.mode === 'reps' ? <View style={s.grid}><View style={{ flex: 1 }}><Field label="Sets"><Input value={row.sets} keyboardType="number-pad" onChangeText={(v) => handleExerciseTextChange(index, 'sets', v)} editable={!isSavingRoutine} /></Field></View><View style={{ flex: 1 }}><Field label="Reps"><Input value={row.reps} keyboardType="number-pad" onChangeText={(v) => handleExerciseTextChange(index, 'reps', v)} editable={!isSavingRoutine} /></Field></View></View>
+                : <Field label="Duration (minutes)"><Input value={row.durationMin} keyboardType="decimal-pad" onChangeText={(v) => handleExerciseTextChange(index, 'durationMin', v)} editable={!isSavingRoutine} /></Field>}
+              <SecondaryButton label={`Remove exercise ${index + 1}`} onPress={() => { if (!isSavingRoutine) handleRemoveExerciseRow(index); }} />
+            </View>)}
+            <SecondaryButton label="Add exercise" onPress={() => { if (!isSavingRoutine) handleAddExerciseRow(); }} />
+            <ErrorText text={formError} />
+            <PrimaryButton label="Save routine" loading={isSavingRoutine} onPress={() => { void handleSaveRoutine(); }} />
+            <SecondaryButton label="Cancel" onPress={() => { if (!isSavingRoutine) handleCloseRoutineForm(); }} />
+          </FormCard>}
+        </> : null}
+        {tab === 'goals' ? <>
+          <EntryCard icon="flag-outline" title="Manage fitness goals" meta="Create, edit or archive your personal targets" onPress={handleGoals} />
+          {!goals.length ? <EmptyCard text="No active goals. Set a personal target to see progress." icon="flag-outline" /> : null}
+          {goals.map((goal) => <Card key={goal.id} title={GOAL_LABELS[goal.goalType] ?? goal.goalType}><GoalProgress goal={goal} /></Card>)}
+        </> : null}
+        {tab === 'trends' ? <>
+          <Card title="Recorded steps · last 7 days">
+            {trends.length ? <BarChart labels={trends.map((r) => r.date.slice(5))} series={[{ label: 'Recorded steps', color: Colors.primary, values: trends.map((r) => r.stepsAvailable ? r.steps : 0) }]} /> : <Text style={s.body}>No activity records yet.</Text>}
+            <Text style={s.muted}>Missing step readings are unavailable, not recorded zero. Details below show the difference.</Text>
+          </Card>
+          {trends.map((row) => <Card key={row.date} title={row.date}>
+            <Text style={s.body}>Steps: {row.stepsAvailable ? row.steps.toLocaleString() : 'No data'}</Text>
+            <Text style={s.body}>{row.calorieSource === 'manual' ? 'Manual calorie override' : 'Estimated active calories'}: {row.caloriesBurned === null ? 'No data' : `${row.caloriesBurned.toLocaleString()} kcal`}</Text>
+            <Text style={s.body}>Sleep logged: {formatSleepDuration(row.sleepDurationMinutes)}</Text>
+          </Card>)}
+          <Text style={s.muted}>Completed days retain the original estimate and measurements. Manual calorie overrides replace estimates; they are never added together.</Text>
+        </> : null}
       </ScrollView>
-    </SafeAreaView>
-  );
+    </KeyboardAvoidingView>}
+  </SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgLight,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: Colors.textSecondary,
-  },
-  scrollContent: {
-    paddingBottom: 32,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-  },
-  goalsButton: {
-    padding: 8,
-  },
-  goalsButtonText: {
-    fontSize: 22,
-  },
-  errorBanner: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    color: Colors.error,
-    fontSize: 13,
-  },
-  emptyState: {
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 20,
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    ...Shadows.card,
-  },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginBottom: 16,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    paddingVertical: 14,
-    alignItems: 'center',
-    ...Shadows.card,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  logButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 16,
-    marginBottom: 20,
-    ...Shadows.button,
-  },
-  logButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  section: {
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: 10,
-    letterSpacing: -0.3,
-  },
-  deviceStepsCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 14,
-    gap: 8,
-    ...Shadows.card,
-  },
-  deviceStepsLoadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  deviceStepsValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.accentOlive,
-  },
-  deviceStepsNote: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  enableButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.accentOlive,
-    borderRadius: 8,
-    height: 36,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  enableButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  syncButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.accentOlive,
-    borderRadius: 8,
-    height: 38,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  syncButtonDisabled: {
-    opacity: 0.5,
-  },
-  syncButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  waterHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  waterGoalLink: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.accentBlue,
-    marginBottom: 10,
-  },
-  waterCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 14,
-    gap: 10,
-    ...Shadows.card,
-  },
-  waterAmountText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.accentBlue,
-  },
-  waterQuickAddRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  waterQuickAddButton: {
-    flex: 1,
-    backgroundColor: Colors.accentBlue,
-    borderRadius: 8,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  waterQuickAddButtonDisabled: {
-    opacity: 0.5,
-  },
-  waterQuickAddButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  goalCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 12,
-    marginBottom: 10,
-    gap: 6,
-    ...Shadows.card,
-  },
-  goalLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  goalMeta: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: Colors.borderLight,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: Colors.primary,
-    borderRadius: 4,
-  },
-  trendsCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 12,
-    ...Shadows.card,
-  },
-  trendsHeaderRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-    paddingBottom: 8,
-    marginBottom: 6,
-  },
-  trendsRow: {
-    flexDirection: 'row',
-    paddingVertical: 4,
-  },
-  trendsCell: {
-    flex: 1,
-    fontSize: 13,
-    color: Colors.textPrimary,
-  },
-  trendsHeaderText: {
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-  trendsEmptyText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: 8,
-  },
-  workoutLogCaption: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginTop: -8,
-    marginBottom: 12,
-  },
-  collapsibleHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  collapseChevron: {
-    fontSize: 16,
-    color: Colors.textSecondary,
-    marginBottom: 10,
-  },
-  routinesCard: {
-    gap: 10,
-  },
-  routinesEmptyState: {
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    gap: 10,
-    ...Shadows.card,
-  },
-  routinesEmptyText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  newRoutineButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    height: 38,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.button,
-  },
-  newRoutineButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  routineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 12,
-    gap: 10,
-    ...Shadows.card,
-  },
-  routineInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  routineName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  routineMeta: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  routineActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  logRoutineButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    height: 34,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.button,
-  },
-  logRoutineButtonDisabled: {
-    opacity: 0.5,
-  },
-  logRoutineButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  deleteRoutineButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: Colors.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteRoutineButtonText: {
-    fontSize: 13,
-    color: Colors.error,
-  },
-  newRoutineRow: {
-    alignSelf: 'flex-start',
-  },
-  newRoutineRowText: {
-    color: Colors.primary,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  routineFormCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 14,
-    gap: 10,
-    ...Shadows.card,
-  },
-  routineFormTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  formInput: {
-    height: 42,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.bgLight,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    color: Colors.textPrimary,
-  },
-  errorText: {
-    color: Colors.error,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  exerciseFormRow: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-    paddingTop: 10,
-    gap: 8,
-  },
-  exerciseFormTopRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  exerciseNameInput: {
-    flex: 1,
-  },
-  removeRowButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.borderLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  removeRowButtonText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  modeToggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  modeChip: {
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: Colors.white,
-  },
-  modeChipActive: {
-    backgroundColor: Colors.primarySurface,
-    borderColor: Colors.primary,
-  },
-  modeChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  modeChipTextActive: {
-    color: Colors.primary,
-  },
-  exerciseFormBottomRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  exerciseSmallInput: {
-    flex: 1,
-  },
-  addExerciseButton: {
-    alignSelf: 'flex-start',
-  },
-  addExerciseButtonText: {
-    color: Colors.primary,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  routineFormActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  cancelButton: {
-    flex: 1,
-    height: 42,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButtonText: {
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  saveRoutineButton: {
-    flex: 1,
-    height: 42,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.button,
-  },
-  saveButtonDisabled: {
-    backgroundColor: Colors.primaryLight,
-  },
-  saveRoutineButtonText: {
-    color: Colors.white,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-});
