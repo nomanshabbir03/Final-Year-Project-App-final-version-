@@ -52,6 +52,11 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = ['*']
 
+# Render terminates HTTPS at its proxy; trust its header so request.is_secure() and absolute URLs use https
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+RENDER_EXTERNAL_HOSTNAME = config('RENDER_EXTERNAL_HOSTNAME', default='')
+CSRF_TRUSTED_ORIGINS = [f'https://{RENDER_EXTERNAL_HOSTNAME}'] if RENDER_EXTERNAL_HOSTNAME else []
+
 
 # Application definition
 
@@ -114,7 +119,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {'default': dj_database_url.config(default=config('DATABASE_URL'))}
+DATABASES = {
+    'default': dj_database_url.config(default=config('DATABASE_URL'), conn_max_age=600, conn_health_checks=True)
+}
 
 
 # Password validation

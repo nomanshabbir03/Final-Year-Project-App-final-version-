@@ -60,6 +60,17 @@ npm start
 ```
 Scan the QR code with Expo Go (phone on the same Wi-Fi as the computer). Add `--clear` (`npm start -- --clear`) after pulling dependency changes.
 
+## Deploying the backend (Render, free)
+
+`render.yaml` describes the backend as a free Render web service; the database is the Supabase Postgres of the project used for login.
+
+1. Supabase dashboard > **Connect** > copy the **Session pooler** URI (the direct `db.<ref>.supabase.co` host is IPv6 only and Render can't reach it) and fill in the database password.
+2. Render dashboard > **New > Blueprint** > pick this repository and branch. Render reads `render.yaml`.
+3. Paste the secrets it asks for: `DATABASE_URL` (step 1), `SUPABASE_URL`, `SUPABASE_JWT_SECRET` (only for legacy HS256 projects), `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENWEATHER_API_KEY`. `SECRET_KEY` is generated.
+4. After the first deploy, set `EXPO_PUBLIC_BACKEND_URL=https://<service>.onrender.com` in `fyp-project-app/.env.local`, remove `EXPO_PUBLIC_AUTH_BYPASS`, and restart with `npm start -- --clear`.
+
+Free-plan limits: the service sleeps after 15 minutes without traffic (the next request takes about a minute), and uploaded files (avatars, post images, task attachments) are wiped on every deploy or restart.
+
 ## Notes
 
 - **Any Expo account can open the app.** `npm start` runs `expo start --offline`, which serves the project without signing it to the logged-in Expo account, so teammates with their own (or no) Expo account can scan the QR code.

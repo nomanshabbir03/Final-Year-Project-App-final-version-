@@ -1,0 +1,32 @@
+# Render Blueprint for the Django backend (free plan). The database is the Supabase Postgres
+# that already hosts the app's login, because Render's free Postgres is deleted after 30 days.
+# Values marked "sync: false" are secrets you paste into the Render dashboard when creating it.
+services:
+  - type: web
+    name: personal-companion-backend
+    runtime: python
+    plan: free
+    rootDir: fyp-backend
+    buildCommand: bash build.sh
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      # Supabase > Connect > Session pooler URI (IPv4); the direct db.<ref>.supabase.co host is IPv6 only
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
