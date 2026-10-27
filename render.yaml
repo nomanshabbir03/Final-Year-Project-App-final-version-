@@ -22,11 +22,18 @@ services:
         sync: false
       - key: SUPABASE_URL
         sync: false
-      - key: SUPABASE_JWT_SECRET
+      - key: OPENWEATHER_API_KEY
         sync: false
+      # Extra keys are used as fallbacks when one hits its limit (settings._api_keys)
       - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY_2
+        sync: false
+      - key: GEMINI_API_KEY_3
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: OPENWEATHER_API_KEY
+      - key: GROQ_API_KEY_2
+        sync: false
+      - key: GROQ_API_KEY_3
         sync: false
