@@ -32,7 +32,7 @@
       "package": "com.personalcompanion.fypprojectapp"
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [

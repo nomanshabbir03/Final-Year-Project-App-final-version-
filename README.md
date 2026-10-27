@@ -60,17 +60,19 @@ npm start
 ```
 Scan the QR code with Expo Go (phone on the same Wi-Fi as the computer). Add `--clear` (`npm start -- --clear`) after pulling dependency changes.
 
-## Deploying the backend (Render, free)
+## Deploying on Render (free)
 
-`render.yaml` describes the backend as a free Render web service; the database is the Supabase Postgres of the project used for login.
+`render.yaml` creates two free Render services: `personal-companion-backend` (Django) and `personal-companion-app` (the web version of the Expo app). The database is the Supabase Postgres of the project used for login. Secrets are uploaded as Render **Secret Files**, not committed.
 
 1. Supabase dashboard > **Connect** > copy the **Session pooler** URI (the direct `db.<ref>.supabase.co` host is IPv6 only and Render can't reach it) and fill in the database password.
-2. Render dashboard > **New > Blueprint** > pick this repository and branch. Render reads `render.yaml`.
-3. Paste the secrets it asks for: `DATABASE_URL` (step 1), `SUPABASE_URL`, `OPENWEATHER_API_KEY` and the `GEMINI_API_KEY*` / `GROQ_API_KEY*` keys from `fyp-backend/.env` (leave unused ones empty). `SECRET_KEY` is generated.
-   Django's tables live in the `public` schema, so in Supabase > Project Settings > **Data API** remove `public` from the exposed schemas (the app only uses Supabase for login); otherwise the public anon key could read them.
-4. After the first deploy, set `EXPO_PUBLIC_BACKEND_URL=https://<service>.onrender.com` in `fyp-project-app/.env.local`, remove `EXPO_PUBLIC_AUTH_BYPASS`, and restart with `npm start -- --clear`.
+2. Supabase > Project Settings > **Data API**: remove `public` from the exposed schemas. Django's tables live there and the app only uses Supabase for login; otherwise the public anon key could read them.
+3. Render dashboard > **New > Blueprint** > pick this repository and branch. Render reads `render.yaml` and creates both services (the first builds fail until step 4 is done).
+4. Upload the Secret Files (service > **Environment** > **Secret Files**), then **Manual Deploy**:
+   - backend: `.env` (a copy of `fyp-backend/.env` with `DATABASE_URL` set to the URI from step 1). `DEBUG=False` and `SECRET_KEY` come from Render and override the file.
+   - app: `.env.local` and `.env.development` (copies of the app's files with `EXPO_PUBLIC_BACKEND_URL=https://<backend>.onrender.com` and **without** `EXPO_PUBLIC_AUTH_BYPASS`; the login bypass only works with a local DEBUG backend).
+5. For the phone app, put the same `EXPO_PUBLIC_BACKEND_URL` in your local `fyp-project-app/.env.local` and restart with `npm start -- --clear`.
 
-Free-plan limits: the service sleeps after 15 minutes without traffic (the next request takes about a minute), and uploaded files (avatars, post images, task attachments) are wiped on every deploy or restart.
+Free-plan limits: the backend sleeps after 15 minutes without traffic (the next request takes about a minute), and uploaded files (avatars, post images, task attachments) are wiped on every deploy or restart. On the web version, notifications, the Qibla compass and some native pickers are unavailable.
 
 ## Notes
 

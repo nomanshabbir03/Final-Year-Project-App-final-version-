@@ -21,8 +21,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def _load_env_file() -> None:
-    env_path = BASE_DIR / '.env'
-    if not env_path.exists():
+    # Local .env, or the .env uploaded as a Render secret file (/etc/secrets or the repo root).
+    # Variables already set in the environment win, so Render's DEBUG=False beats the file.
+    candidates = [BASE_DIR / '.env', Path('/etc/secrets/.env'), BASE_DIR.parent / '.env']
+    env_path = next((p for p in candidates if p.is_file()), None)
+    if env_path is None:
         return
 
     for raw_line in env_path.read_text(encoding='utf-8').splitlines():
@@ -35,7 +38,7 @@ def _load_env_file() -> None:
         value = value.strip().strip('"').strip("'")
 
         if key:
-            os.environ[key] = value
+            os.environ.setdefault(key, value)
 
 
 _load_env_file()
