@@ -3,7 +3,7 @@
 # (service > Environment > Secret Files):
 #   backend: .env      - DATABASE_URL must be the Supabase Session pooler URI
 #   app:     .env.local and .env.development - EXPO_PUBLIC_BACKEND_URL must be the backend's
-#            https://....onrender.com URL, and EXPO_PUBLIC_AUTH_BYPASS must be removed
+#            https://....onrender.com URL; keep EXPO_PUBLIC_AUTH_BYPASS=1 while login is disabled
 services:
   - type: web
     name: personal-companion-backend
@@ -21,6 +21,10 @@ services:
         value: "False"
       - key: SECRET_KEY
         generateValue: true
+      # Login disabled for now: requests without a token use a shared demo user. Set to "False"
+      # (and remove EXPO_PUBLIC_AUTH_BYPASS from the app builds) to require Supabase sign-in.
+      - key: DEV_AUTH_BYPASS
+        value: "True"
 
   - type: web
     name: personal-companion-app

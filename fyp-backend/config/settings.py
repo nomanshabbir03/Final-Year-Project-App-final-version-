@@ -199,9 +199,10 @@ REST_FRAMEWORK = {
 SUPABASE_URL = config('SUPABASE_URL', default='').rstrip('/')
 # Only needed if the project still uses the legacy HS256 JWT secret (not asymmetric signing keys).
 SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
-# DEV ONLY: requests without a token act as a shared demo user (login disabled). Never on without DEBUG,
-# and never during `manage.py test` so the auth tests keep checking real authentication.
-DEV_AUTH_BYPASS = DEBUG and config('DEV_AUTH_BYPASS', default=False, cast=bool) and 'test' not in sys.argv[1:2]
+# Login disabled for now: requests without a token act as one shared demo user, also on the deployed
+# backend (render.yaml sets it). Turn it off to require Supabase sign-in. Never on during
+# `manage.py test`, so the auth tests keep checking real authentication.
+DEV_AUTH_BYPASS = config('DEV_AUTH_BYPASS', default=False, cast=bool) and 'test' not in sys.argv[1:2]
 
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='')
 if not EMAIL_BACKEND:

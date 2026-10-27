@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.personalcompanion.fypprojectapp",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Allow this app to convert your speech to text for voice commands.",
         "NSMicrophoneUsageDescription": "Allow this app to use the microphone for voice commands.",
