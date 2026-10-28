@@ -5,7 +5,7 @@ from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import UserProfile
+from accounts.models import get_profile
 from django.db import IntegrityError
 
 from .models import SavedLocation
@@ -15,7 +15,7 @@ from .services import WeatherAdapter, WeatherAdapterError, lookup
 
 def _get_request_user_id(request):
     if getattr(request, "user", None) and request.user.is_authenticated:
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile = get_profile(request.user)
         return profile.external_user_id
 
     raw = request.headers.get("X-User-Id") or request.query_params.get("user_id")
@@ -46,7 +46,7 @@ class WeatherByCityView(APIView):
             except ValueError:
                 return Response({"detail": "lat and lon must be numbers."}, status=status.HTTP_400_BAD_REQUEST)
         if not city and lat is None:
-            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            profile = get_profile(request.user)
             city = profile.selected_city
         if not city and lat is None:
             return Response({"detail": 'Query parameter "city" (or lat/lon) is required.'}, status=status.HTTP_400_BAD_REQUEST)

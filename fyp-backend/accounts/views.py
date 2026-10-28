@@ -6,7 +6,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import UserProfile
+from .models import get_profile
 from .serializers import ProfileSerializer, merged_preferences
 from .timezones import user_now
 
@@ -37,7 +37,7 @@ def _profile_payload(profile, request=None):
 
 
 def _auth_payload(user, request=None):
-    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile = get_profile(user)
     return {
         'email': user.email,
         'user_id': str(profile.external_user_id),
@@ -63,7 +63,7 @@ class ProfileView(APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile = get_profile(request.user)
         return Response(_profile_payload(profile, request=request), status=status.HTTP_200_OK)
 
     def patch(self, request):
@@ -71,7 +71,7 @@ class ProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         data = dict(serializer.validated_data)
 
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile = get_profile(request.user)
         changed = set()
         if data.pop('remove_avatar', False):
             if profile.avatar_image:
@@ -105,7 +105,7 @@ class ProfileSummaryView(APIView):
         from tasks.models import Task
 
         user = request.user
-        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile = get_profile(user)
         today = user_now(user).date()
         tasks = Task.objects.filter(user=user)
         habits = Habit.objects.filter(user_id=profile.external_user_id)

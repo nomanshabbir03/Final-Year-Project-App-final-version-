@@ -5,7 +5,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import UserProfile
+from accounts.models import get_profile
 from accounts.serializers import merged_preferences
 from accounts.timezones import user_now
 
@@ -23,7 +23,7 @@ class PrayerTimesView(APIView):
 
     def get(self, request):
         params = request.query_params
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile = get_profile(request.user)
         prefs = merged_preferences(profile.preferences)
 
         lat = lon = None

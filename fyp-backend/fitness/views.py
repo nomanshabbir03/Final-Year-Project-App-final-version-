@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
 
-from accounts.models import UserProfile
+from accounts.models import UserProfile, get_profile
 from accounts.timezones import user_now, user_tz
 
 from .models import FitnessGoal, FitnessProfile, FitnessRecord, WaterIntake, WorkoutRoutine, FitnessAchievement, SleepRecord
@@ -32,7 +32,7 @@ def _get_request_user_id(request):
     # Duplicated locally, same as budget/views.py relative to habits/views.py — mirrors the
     # project's real auth (Django TokenAuthentication + IsAuthenticated), not a shared import.
     if getattr(request, 'user', None) and request.user.is_authenticated:
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile = get_profile(request.user)
         return profile.external_user_id
 
     raw = request.headers.get('X-User-Id') or request.query_params.get('user_id')

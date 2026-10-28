@@ -8,7 +8,7 @@ from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
-from accounts.models import UserProfile
+from accounts.models import UserProfile, get_profile
 from accounts.serializers import merged_preferences
 from accounts.timezones import user_now, user_tz
 from budget.models import BudgetSettings, BudgetTransaction, CategoryBudget
@@ -33,7 +33,7 @@ class ToolContext:
 
     @property
     def user_id(self):
-        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile = get_profile(self.user)
         return profile.external_user_id
 
 
@@ -202,7 +202,7 @@ def _profile_city(ctx, city):
     city = (city or '').strip()
     if city:
         return city
-    profile, _ = UserProfile.objects.get_or_create(user=ctx.user)
+    profile = get_profile(ctx.user)
     if not profile.selected_city:
         raise ToolError('No city given and none saved in the profile. Ask the user which city.')
     return profile.selected_city
@@ -242,7 +242,7 @@ def get_weather(ctx, city=None):
 def get_prayer_times(ctx, city=None, date=None):
     city = _profile_city(ctx, city)
     day = _date(date) or user_now(ctx.user).date()
-    profile, _ = UserProfile.objects.get_or_create(user=ctx.user)
+    profile = get_profile(ctx.user)
     prefs = merged_preferences(profile.preferences)
     try:
         entry = prayer_services.get_day(day, address=city, method=prefs['prayer_method'],

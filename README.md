@@ -69,16 +69,16 @@ Scan the QR code with Expo Go (phone on the same Wi-Fi as the computer). Add `--
 3. Render dashboard > **New > Blueprint** > pick this repository and branch. Render reads `render.yaml` and creates both services (the first builds fail until step 4 is done).
 4. Upload the Secret Files (service > **Environment** > **Secret Files**), then **Manual Deploy**:
    - backend: `.env` (a copy of `fyp-backend/.env` with `DATABASE_URL` set to the URI from step 1). `DEBUG=False` and `SECRET_KEY` come from Render and override the file.
-   - app: `.env.local` and `.env.development` (copies of the app's files with `EXPO_PUBLIC_BACKEND_URL=https://<backend>.onrender.com` and `EXPO_PUBLIC_AUTH_BYPASS=1` while login is disabled).
+   - app: `.env.local` and `.env.development` (copies of the app's files with `EXPO_PUBLIC_BACKEND_URL=https://<backend>.onrender.com`, without `EXPO_PUBLIC_AUTH_BYPASS`).
 5. For the phone app, put the same `EXPO_PUBLIC_BACKEND_URL` in your local `fyp-project-app/.env.local` and restart with `npm start -- --clear`.
 
-Login is disabled for now: `DEV_AUTH_BYPASS=True` in `render.yaml` makes requests without a token use one shared demo user, so anyone with the URL sees the same demo data. Set it to `False` and remove `EXPO_PUBLIC_AUTH_BYPASS` (app `.env.local` and `eas.json`) to require Supabase sign-in.
+Users sign in with Supabase (`DEV_AUTH_BYPASS=False` in `render.yaml`). For local demos only, `DEV_AUTH_BYPASS=True` in the backend `.env` plus `EXPO_PUBLIC_AUTH_BYPASS=1` in the app's `.env.local` skips sign-in and uses one shared demo user.
 
-Free-plan limits: the backend sleeps after 15 minutes without traffic (the next request takes about a minute), and uploaded files (avatars, post images, task attachments) are wiped on every deploy or restart. On the web version, notifications, the Qibla compass and some native pickers are unavailable.
+Free-plan limits: the backend sleeps after 15 minutes without traffic (the next request takes about a minute). A free uptime monitor (for example UptimeRobot) requesting `https://<backend>.onrender.com/` every 5 minutes keeps it awake; one always-on service fits in the 750 free instance hours a month. Also, and uploaded files (avatars, post images, task attachments) are wiped on every deploy or restart. On the web version, notifications, the Qibla compass and some native pickers are unavailable.
 
 ## Android and iOS builds (EAS)
 
-`fyp-project-app/eas.json` points every build at the Render backend with login disabled. From `fyp-project-app`:
+`fyp-project-app/eas.json` points every build at the Render backend. From `fyp-project-app`:
 
 ```cmd
 npx eas-cli login

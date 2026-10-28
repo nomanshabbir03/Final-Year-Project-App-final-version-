@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
@@ -38,16 +38,67 @@ console.log(`Backend base URL: ${resolvedBackend.url} (from ${resolvedBackend.so
 
 export const api = axios.create({
   baseURL: resolvedBackend.url,
-  timeout: 20000,
+  // Long enough (with the one retry below) to ride out a free Render instance waking up.
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
+// Short-lived cache for GET requests: going back to a screen, or several screens asking for the
+// same data, reuses a response from the last few seconds instead of another trip to the server,
+// and identical GETs already on their way share one request. Any change (POST/PUT/PATCH/DELETE)
+// and signing in or out clears it, so the app never shows old data after an edit.
+const GET_CACHE_MS = 15000;
+const getCache = new Map<string, { at: number; response: AxiosResponse }>();
+const pendingGets = new Map<string, Promise<AxiosResponse>>();
+let cacheGeneration = 0;
+
+export function clearApiCache() {
+  cacheGeneration += 1;
+  getCache.clear();
+  pendingGets.clear();
+}
+
+const networkAdapter = axios.getAdapter(axios.defaults.adapter);
+
+api.defaults.adapter = (config) => {
+  if (config.method?.toLowerCase() !== 'get') {
+    clearApiCache();
+    return networkAdapter(config);
+  }
+
+  const key = api.getUri(config);
+  const cached = getCache.get(key);
+  if (cached && Date.now() - cached.at < GET_CACHE_MS) {
+    // A copy each time: axios replaces `data` with the parsed body on the object it gets back.
+    return Promise.resolve({ ...cached.response, config });
+  }
+
+  let pending = pendingGets.get(key);
+  if (!pending) {
+    const generation = cacheGeneration;
+    pending = networkAdapter(config).then((response) => {
+      // Skip responses that started before a change was saved; they may already be out of date.
+      if (generation === cacheGeneration) {
+        getCache.set(key, { at: Date.now(), response });
+      }
+      return response;
+    });
+    pendingGets.set(key, pending);
+    const done = pending;
+    done.finally(() => pendingGets.get(key) === done && pendingGets.delete(key)).catch(() => {});
+  }
+  return pending.then((response) => ({ ...response, config }));
+};
+
 let authToken: string | null = null;
 let requestUserId: string | null = process.env.EXPO_PUBLIC_USER_ID?.trim() || null;
 
 export function setApiAuthToken(token: string | null) {
+  if (token !== authToken) {
+    clearApiCache();
+  }
   authToken = token;
   if (token) {
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -57,7 +108,11 @@ export function setApiAuthToken(token: string | null) {
 }
 
 export function setApiRequestUserId(userId: string | null) {
-  requestUserId = userId?.trim() || null;
+  const next = userId?.trim() || null;
+  if (next !== requestUserId) {
+    clearApiCache();
+  }
+  requestUserId = next;
 }
 
 api.interceptors.request.use((config) => {

@@ -5,7 +5,7 @@ from django.db.models import Prefetch
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from accounts.models import UserProfile
+from accounts.models import get_profile
 from accounts.timezones import user_now
 
 from .models import Habit, HabitCompletion
@@ -17,7 +17,7 @@ BACKFILL_DAYS = 7
 
 def _get_request_user_id(request):
 	if getattr(request, 'user', None) and request.user.is_authenticated:
-		profile, _ = UserProfile.objects.get_or_create(user=request.user)
+		profile = get_profile(request.user)
 		return profile.external_user_id
 
 	raw = request.headers.get('X-User-Id') or request.query_params.get('user_id')

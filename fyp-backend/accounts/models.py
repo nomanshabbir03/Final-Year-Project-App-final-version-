@@ -29,6 +29,20 @@ class UserProfile(models.Model):
         return f'{self.user.username} ({self.external_user_id})'
 
 
+def get_profile(user):
+    """The user's profile, created if missing.
+
+    Cached on the user object: the auth classes load it together with the user, so views and
+    user_now() reuse it instead of paying another database round trip on every call.
+    """
+    try:
+        return user.profile
+    except UserProfile.DoesNotExist:
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        user.profile = profile
+        return profile
+
+
 class ConfirmationCode(models.Model):
     email = models.EmailField(db_index=True)
     code = models.CharField(max_length=10)

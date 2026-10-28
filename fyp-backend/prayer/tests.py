@@ -58,6 +58,7 @@ class PrayerTests(TestCase):
 
     def test_validation(self):
         UserProfile.objects.filter(user=self.user).update(selected_city='')
+        self.user.refresh_from_db()  # drop the cached profile, as a fresh request would
         self.assertEqual(self.client.get('/api/prayer/times/').status_code, 400)
         self.assertEqual(self.client.get('/api/prayer/times/?lat=200&lon=1').status_code, 400)
 

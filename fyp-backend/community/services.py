@@ -4,7 +4,7 @@ import datetime
 
 from django.db.models import Sum
 
-from accounts.models import UserProfile
+from accounts.models import get_profile
 from accounts.serializers import merged_preferences
 from accounts.timezones import user_now
 from fitness.models import FitnessRecord
@@ -14,7 +14,7 @@ from tasks.models import Task
 
 
 def profile_of(user):
-    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile = get_profile(user)
     return profile
 
 

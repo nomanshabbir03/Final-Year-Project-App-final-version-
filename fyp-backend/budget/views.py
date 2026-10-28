@@ -12,7 +12,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import UserProfile
+from accounts.models import get_profile
 
 from .models import BudgetSettings, BudgetTransaction, CategoryBudget, SavingsGoal, Subscription
 from .serializers import (
@@ -30,7 +30,7 @@ def _get_request_user_id(request):
     # same as the rest of the app under the project's real auth (Django TokenAuthentication
     # + IsAuthenticated), not the nonexistent "IsSupabaseAuthenticated".
     if getattr(request, 'user', None) and request.user.is_authenticated:
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile = get_profile(request.user)
         return profile.external_user_id
 
     raw = request.headers.get('X-User-Id') or request.query_params.get('user_id')

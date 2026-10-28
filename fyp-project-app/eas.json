@@ -6,8 +6,7 @@
   "build": {
     "base": {
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://personal-companion-backend-vc66.onrender.com",
-        "EXPO_PUBLIC_AUTH_BYPASS": "1"
+        "EXPO_PUBLIC_BACKEND_URL": "https://personal-companion-backend-vc66.onrender.com"
       }
     },
     "development": {

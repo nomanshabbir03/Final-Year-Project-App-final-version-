@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.utils import timezone
 
-from .models import UserProfile
+from .models import get_profile
 
 DEFAULT_TZ = 'Asia/Karachi'
 
@@ -19,8 +19,7 @@ def is_valid_timezone(name: str) -> bool:
 
 
 def user_tz(user) -> ZoneInfo:
-    profile = UserProfile.objects.filter(user=user).only('timezone').first()
-    name = (profile.timezone if profile else '') or DEFAULT_TZ
+    name = get_profile(user).timezone or DEFAULT_TZ
     try:
         return ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError):

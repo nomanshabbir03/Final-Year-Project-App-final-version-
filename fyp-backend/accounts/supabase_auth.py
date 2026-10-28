@@ -61,7 +61,9 @@ def _user_for_claims(claims: dict):
 
     profile = UserProfile.objects.select_related('user').filter(supabase_user_id=supabase_id).first()
     if profile:
-        return profile.user
+        user = profile.user
+        user.profile = profile  # reused by get_profile() for the rest of the request
+        return user
 
     if not email:
         raise exceptions.AuthenticationFailed('Account has no email address.')
@@ -80,6 +82,7 @@ def _user_for_claims(claims: dict):
     if not profile.full_name:
         profile.full_name = (metadata.get('full_name') or metadata.get('name') or '')[:120]
     profile.save()
+    user.profile = profile
     return user
 
 
