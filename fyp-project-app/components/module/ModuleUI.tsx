@@ -15,7 +15,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { DrawerActions, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors, Font, Radius, Shadows } from '../../constants/theme';
@@ -38,9 +38,20 @@ export function ModuleHeader({
   showBack?: boolean;
 }) {
   const navigation = useNavigation();
+  // Screens of the side drawer (Dashboard, Tasks, Habits, Weather) get the menu button instead of Back.
+  const inDrawer = navigation.getState()?.type === 'drawer';
   return (
     <View style={s.header}>
-      {showBack && navigation.canGoBack() ? (
+      {inDrawer ? (
+        <Pressable
+          style={s.iconBtn}
+          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+          hitSlop={8}
+          accessibilityLabel="Open menu"
+        >
+          <Ionicons name="menu" size={24} color={Colors.textPrimary} />
+        </Pressable>
+      ) : showBack && navigation.canGoBack() ? (
         <Pressable style={s.iconBtn} onPress={() => navigation.goBack()} hitSlop={8} accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
         </Pressable>

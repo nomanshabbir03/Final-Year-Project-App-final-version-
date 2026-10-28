@@ -51,19 +51,30 @@ export function QiblaScreen() {
   const [loading, setLoading] = useState(true);
   const wasAligned = useRef(false);
 
+  const hasCoords = useRef(false);
+
   const start = async () => {
     setError(null);
-    setLoading(true);
+    // Re-opening the screen keeps showing the compass while the position is refreshed.
+    if (!hasCoords.current) setLoading(true);
+    const show = (pos: Location.LocationObject) => {
+      hasCoords.current = true;
+      setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      setLoading(false);
+    };
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setError('Location permission is needed to work out the Qibla direction.');
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      // The Qibla bearing hardly changes within a city, so the phone's last known position is
+      // enough to draw the compass at once; a fresh (network-based, fast) fix then refines it.
+      const last = await Location.getLastKnownPositionAsync({ maxAge: 24 * 60 * 60 * 1000 }).catch(() => null);
+      if (last) show(last);
+      show(await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }));
     } catch {
-      setError('Could not get your location. Check that location services are on.');
+      if (!hasCoords.current) setError('Could not get your location. Check that location services are on.');
     } finally {
       setLoading(false);
     }
@@ -72,20 +83,25 @@ export function QiblaScreen() {
   // Re-check the position whenever the screen is opened.
   useEffect(() => navigation.addListener('focus', start), [navigation]);
 
+  // The compass does not need the position, so it starts right away.
   useEffect(() => {
-    if (!coords) return;
     let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
     Location.watchHeadingAsync((h) => {
       // trueHeading is -1 when the device cannot correct for magnetic declination.
       setHeading(h.trueHeading >= 0 ? h.trueHeading : h.magHeading);
       setAccuracy(h.accuracy);
     })
       .then((s) => {
-        sub = s;
+        if (cancelled) s.remove();
+        else sub = s;
       })
       .catch(() => setError('This device has no compass. Use the bearing below with a physical compass.'));
-    return () => sub?.remove();
-  }, [coords]);
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
+  }, []);
 
   const bearing = coords ? qiblaBearing(coords.lat, coords.lon) : null;
   const turn = bearing !== null && heading !== null ? ((bearing - heading + 540) % 360) - 180 : null;

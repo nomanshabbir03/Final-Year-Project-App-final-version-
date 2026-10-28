@@ -1,4 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
+import axios from 'axios';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { toApiErrorMessage, setApiAuthToken, setApiRequestUserId } from '../services/api';
 import {
@@ -56,6 +57,22 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 // (needs DEV_AUTH_BYPASS=True in fyp-backend/.env). Turn off by removing EXPO_PUBLIC_AUTH_BYPASS.
 const AUTH_BYPASS = process.env.EXPO_PUBLIC_AUTH_BYPASS === '1';
 const BYPASS_KEY = 'auth.bypassSignedIn';
+// Last profile loaded from the backend, per Supabase user, so the app opens without waiting for it.
+const PROFILE_CACHE_KEY = 'auth.profile';
+
+async function readCachedProfile(supabaseUserId: string): Promise<AuthPayload | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PROFILE_CACHE_KEY);
+    const cached = raw ? (JSON.parse(raw) as { sub: string; payload: AuthPayload }) : null;
+    return cached?.sub === supabaseUserId ? cached.payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedProfile(supabaseUserId: string, payload: AuthPayload) {
+  AsyncStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ sub: supabaseUserId, payload })).catch(() => {});
+}
 
 function toAuthUser(payload: AuthPayload, token: string): AuthUser {
   return {
@@ -86,14 +103,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const applyPayload = (payload: AuthPayload, token: string) => {
+    setApiRequestUserId(payload.user_id);
+    setUser(toAuthUser(payload, token));
+  };
+
   // Points the API client at the Supabase access token and loads the backend profile for it.
+  // A profile saved on this phone for the same account is shown at once and refreshed in the
+  // background, so opening the app does not wait for the server.
   const hydrate = async (session: Session) => {
     setApiAuthToken(session.access_token);
+    const cached = await readCachedProfile(session.user.id);
+    if (cached) {
+      applyPayload(cached, session.access_token);
+      meRequest()
+        .then((payload) => {
+          applyPayload(payload, session.access_token);
+          saveCachedProfile(session.user.id, payload);
+        })
+        .catch(async (error) => {
+          // Only a rejected token signs out; being offline keeps the saved profile.
+          if (axios.isAxiosError(error) && error.response?.status === 401) {
+            await AsyncStorage.removeItem(PROFILE_CACHE_KEY).catch(() => {});
+            await supabase.auth.signOut();
+            clearSession();
+          }
+        });
+      return;
+    }
     const payload = await meRequest();
-    setApiRequestUserId(payload.user_id);
-    const nextUser = toAuthUser(payload, session.access_token);
-    setUser(nextUser);
-    return nextUser;
+    applyPayload(payload, session.access_token);
+    saveCachedProfile(session.user.id, payload);
   };
 
   useEffect(() => {
@@ -276,7 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await AsyncStorage.removeItem(BYPASS_KEY).catch(() => {});
+    await AsyncStorage.multiRemove([BYPASS_KEY, PROFILE_CACHE_KEY]).catch(() => {});
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.warn('Supabase sign out failed, clearing local session anyway', error);

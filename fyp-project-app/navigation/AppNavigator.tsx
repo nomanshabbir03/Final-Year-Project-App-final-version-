@@ -3,7 +3,7 @@ import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View } from 'react-native';
 
-import { BottomTabs } from './BottomTabs';
+import { MainDrawer } from './MainDrawer';
 import type { RootStackParamList } from './types';
 import { SplashScreen } from '../screens/SplashScreen';
 import { AddTaskScreen } from '../screens/AddTaskScreen';
@@ -43,6 +43,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 import { Colors } from '../constants/theme';
 import { isDarkMode } from '../constants/appearance';
+import { requestNotificationPermissions } from '../services/notificationService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -66,6 +67,8 @@ export function AppNavigator() {
   useEffect(() => {
     if (isAuthenticated) {
       preloadDashboardData();
+      // Asked once signed in, so the system dialog never interrupts the splash or onboarding.
+      requestNotificationPermissions();
     }
   }, [isAuthenticated, preloadDashboardData]);
 
@@ -108,7 +111,7 @@ export function AppNavigator() {
         />
         <Stack.Screen
           name="MainTabs"
-          component={BottomTabs}
+          component={MainDrawer}
           options={{ headerShown: false }}
         />
         <Stack.Screen name="AddTask" component={AddTaskScreen} options={{ headerShown: false }} />

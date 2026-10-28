@@ -45,6 +45,7 @@ type Place = { city?: string; lat?: number; lon?: number };
 
 const CACHE_KEY = 'weather.lastSnapshot';
 const REFRESH_MS = 10 * 60 * 1000;
+const DEFAULT_CITY = 'Lahore';
 
 export function WeatherScreen() {
   const { setWeather } = useAppContext();
@@ -126,22 +127,10 @@ export function WeatherScreen() {
     return { city, lat: pos.coords.latitude, lon: pos.coords.longitude };
   }, []);
 
-  // Start: device location → city in the profile → ask.
+  // Start with the city in the profile, or Lahore. Waiting for a GPS fix first made the screen slow;
+  // "Use my location" in the city picker still switches to the device's position.
   useEffect(() => {
-    (async () => {
-      let target: Place | null = null;
-      try {
-        target = await devicePlace();
-      } catch {
-        target = null;
-      }
-      if (!target && user?.selectedCity) target = { city: user.selectedCity };
-      if (target) choose(target);
-      else {
-        setLoading(false);
-        setPickerOpen(true);
-      }
-    })();
+    choose({ city: user?.selectedCity?.trim() || DEFAULT_CITY });
     getSavedLocations().then(setSaved).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

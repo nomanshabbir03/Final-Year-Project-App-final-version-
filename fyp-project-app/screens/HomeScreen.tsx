@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, MainTabParamList } from '../navigation/types';
 import { CompositeNavigationProp } from '@react-navigation/native';
-import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { DrawerNavigationProp } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -31,11 +31,6 @@ function cityFromTimezone(timezone?: string): PrayerPlace | null {
   return city ? { city, label: city } : null;
 }
 
-const SECTION_GAP = 16;        // gap between sections (contentContainer gap)
-const GRID_GAP = 12;           // gap between the two rows of tiles (statGrid rowGap)
-const FOLD_MARGIN = 4;        // keeps the tiles just inside the screen, so Budget starts just outside it
-const MIN_THOUGHT_HEIGHT = 44;
-const FULL_THOUGHT_HEIGHT = 200;   // room for the longest verse (2-line Arabic + 3-line translation)
 
 const DAILY_THOUGHTS = [
   { arabic: 'رَبِّ زِدْنِي عِلْمًا', translation: 'My Lord, increase me in knowledge.', ref: 'Quran 20:114' },
@@ -69,7 +64,7 @@ interface Medication {
 }
 
 type HomeScreenNavigationProp = CompositeNavigationProp<
-  BottomTabNavigationProp<MainTabParamList>,
+  DrawerNavigationProp<MainTabParamList>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 
@@ -97,8 +92,6 @@ export function HomeScreen() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [stepsToday, setStepsToday] = useState<number | null>(null);
   // Visible scroll height and the height of greeting + next-up card + tiles (see the top element below).
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [headHeight, setHeadHeight] = useState(0); // greeting + next-up card
   const { width: windowWidth } = useWindowDimensions();
   const [nextEvent, setNextEvent] = useState<NextEvent | null>(null);
   
@@ -137,7 +130,7 @@ export function HomeScreen() {
 
   // Weather fetching (unchanged but integrated into new design)
   useEffect(() => {
-    const selectedCity = user?.selectedCity?.trim() || 'London';
+    const selectedCity = user?.selectedCity?.trim() || 'Lahore';
     if (!selectedCity) {
       return;
     }
@@ -491,70 +484,47 @@ export function HomeScreen() {
     },
   ];
 
-  // Vertical budget of the first screen: the verse card above the greeting takes whatever is left after the
-  // greeting, the next-up card and the four tiles, so the tiles stay fully visible and the Budget card starts
-  // just below the bottom edge (no sliver of it, no blank gap). If the next-up card grows (weather, medication
-  // lines) and the verse would lose its room, the tiles give back a little height (at most 20%) instead.
-  const topPadding = insets.top + 16;
-  const tileWidth = (windowWidth - 32) * 0.485;
-  const squareGridHeight = tileWidth * 2 + GRID_GAP;
-  const spare =
-    viewportHeight > 0 && headHeight > 0
-      ? viewportHeight - topPadding - headHeight - SECTION_GAP * 2 - FOLD_MARGIN - squareGridHeight
-      : 0;
-  const maxTileShrink = tileWidth * 2 * 0.2;
-  let topHeight = 0;
-  let tileHeight = tileWidth;
-  if (spare >= MIN_THOUGHT_HEIGHT) {
-    topHeight = Math.floor(spare);
-  } else if (spare + maxTileShrink >= MIN_THOUGHT_HEIGHT) {
-    const shrink = MIN_THOUGHT_HEIGHT - spare;
-    topHeight = MIN_THOUGHT_HEIGHT;
-    tileHeight = tileWidth - shrink / 2;
-  } else if (spare !== 0) {
-    // Not even a strip fits: no verse, but still keep the four tiles fully on screen (small phones).
-    const overflow = Math.max(0, -(spare + SECTION_GAP));
-    tileHeight = tileWidth - Math.min(overflow, maxTileShrink) / 2;
-  }
-  const showThought = topHeight >= MIN_THOUGHT_HEIGHT;
-  const fullThought = topHeight >= FULL_THOUGHT_HEIGHT;
+  const topPadding = insets.top + 12;
+  const tileHeight = (windowWidth - 32) * 0.485; // square tiles
   const dayOfYear = Math.floor((currentTime.getTime() - new Date(currentTime.getFullYear(), 0, 0).getTime()) / 86400000);
   const thought = DAILY_THOUGHTS[dayOfYear % DAILY_THOUGHTS.length];
 
   return (
     <ScrollView
       style={styles.screen}
-      onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
       contentContainerStyle={[styles.contentContainer, { paddingTop: topPadding }]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
       }
     >
-      {/* Thought for today (fills the space left above the greeting) */}
-      {showThought && (
-        <View style={[styles.thoughtCard, { height: topHeight }]}>
-          {fullThought ? (
-            <>
-              <Text style={styles.thoughtEyebrow}>THOUGHT FOR TODAY</Text>
-              <Text style={styles.thoughtArabic} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}>
-                {thought.arabic}
-              </Text>
-              <Text style={styles.thoughtTranslation} numberOfLines={3} adjustsFontSizeToFit minimumFontScale={0.8}>
-                {thought.translation}
-              </Text>
-              <Text style={styles.thoughtRef}>{thought.ref}</Text>
-            </>
+      {/* Menu + profile */}
+      <View style={styles.topBar}>
+        <Pressable
+          style={styles.menuButton}
+          onPress={() => navigation.openDrawer()}
+          hitSlop={8}
+          accessibilityLabel="Open menu"
+        >
+          <Ionicons name="menu" size={24} color={Colors.textPrimary} />
+        </Pressable>
+        <Pressable style={styles.avatar} onPress={() => navigation.navigate('Profile')}>
+          {user?.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
           ) : (
-            <Text style={styles.thoughtCompact} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
-              {thought.translation} <Text style={styles.thoughtRef}>· {thought.ref}</Text>
-            </Text>
+            <Text style={styles.avatarText}>{initials}</Text>
           )}
-        </View>
-      )}
+        </Pressable>
+      </View>
 
-      {/* Greeting + next-up card are measured so the verse card above can use the space that is left */}
+      {/* Thought for today: fixed text sizes, so it never shrinks when the cards below fill in */}
+      <View style={styles.thoughtCard}>
+        <Text style={styles.thoughtEyebrow}>THOUGHT FOR TODAY</Text>
+        <Text style={styles.thoughtArabic}>{thought.arabic}</Text>
+        <Text style={styles.thoughtTranslation}>{thought.translation}</Text>
+        <Text style={styles.thoughtRef}>{thought.ref}</Text>
+      </View>
+
       <View style={styles.aboveFold}>
-      <View style={styles.aboveFold} onLayout={(e) => setHeadHeight(e.nativeEvent.layout.height)}>
       {/* Greeting Row */}
       <View style={styles.greetingRow}>
         <View style={styles.greetingText}>
@@ -564,13 +534,6 @@ export function HomeScreen() {
           <Text style={styles.greetingLine}>{getGreeting()}, {firstName} 👋</Text>
           <Text style={styles.greetingLabel}>{getMoodLine()}</Text>
         </View>
-        <Pressable style={styles.avatar} onPress={() => navigation.navigate('Profile')}>
-          {user?.avatarUrl ? (
-            <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
-          ) : (
-            <Text style={styles.avatarText}>{initials}</Text>
-          )}
-        </Pressable>
       </View>
 
       {/* Hero Card: Next Up + Weather */}
@@ -641,8 +604,6 @@ export function HomeScreen() {
             </View>
           </Pressable>
         ))}
-      </View>
-
       </View>
 
       {/* Budget summary */}
@@ -1083,10 +1044,25 @@ const styles = StyleSheet.create({
   aboveFold: {
     gap: 16,
   },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  menuButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: Colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.card,
+  },
   thoughtCard: {
     backgroundColor: Colors.primary,
     borderRadius: Radius.lg,
     paddingHorizontal: 20,
+    paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -1099,8 +1075,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   thoughtArabic: {
-    fontSize: 30,
-    lineHeight: 46,
+    fontSize: 28,
+    lineHeight: 44,
     fontWeight: '700',
     color: Colors.white,
     textAlign: 'center',
@@ -1120,13 +1096,6 @@ const styles = StyleSheet.create({
     fontFamily: Font.bold,
     color: 'rgba(255,255,255,0.8)',
     marginTop: 4,
-  },
-  thoughtCompact: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontFamily: Font.bold,
-    color: Colors.white,
-    textAlign: 'center',
   },
   statGrid: {
     flexDirection: 'row',

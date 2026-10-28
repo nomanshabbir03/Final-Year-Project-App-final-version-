@@ -26,11 +26,22 @@ export function SplashScreen() {
   const textFade = useRef(new Animated.Value(0)).current;
   const textRise = useRef(new Animated.Value(16)).current;
   const chips = useRef(MODULES.map(() => new Animated.Value(0))).current;
+  const signedIn = useRef(isAuthenticated);
+  signedIn.current = isAuthenticated;
 
   useEffect(() => {
     Animated.loop(
       Animated.timing(ring, { toValue: 1, duration: 1800, easing: Easing.out(Easing.quad), useNativeDriver: true })
     ).start();
+
+    let left = false;
+    const leave = () => {
+      if (left) return;
+      left = true;
+      // A restored Supabase session skips onboarding and login.
+      navigation.reset({ index: 0, routes: [{ name: signedIn.current ? 'MainTabs' : 'Onboarding' }] });
+    };
+    let hold: ReturnType<typeof setTimeout> | undefined;
 
     Animated.sequence([
       Animated.parallel([
@@ -45,14 +56,19 @@ export function SplashScreen() {
         90,
         chips.map((v) => Animated.spring(v, { toValue: 1, friction: 6, useNativeDriver: true }))
       ),
-    ]).start();
-
-    const timer = setTimeout(() => {
-      // A restored Supabase session skips onboarding and login.
-      navigation.reset({ index: 0, routes: [{ name: isAuthenticated ? 'MainTabs' : 'Onboarding' }] });
-    }, 3200);
-    return () => clearTimeout(timer);
-  }, [navigation, isAuthenticated, ring, logoFade, logoScale, textFade, textRise, chips]);
+    ]).start(({ finished }) => {
+      // Leave only once the whole animation has played, then let it rest on screen for a moment.
+      if (finished) hold = setTimeout(leave, 900);
+    });
+    // Safety net in case the animation is interrupted (e.g. the app goes to the background).
+    const fallback = setTimeout(leave, 7000);
+    return () => {
+      clearTimeout(hold);
+      clearTimeout(fallback);
+    };
+    // Runs once: the animation must not restart when the auth state settles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const ringStyle = {
     opacity: ring.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),

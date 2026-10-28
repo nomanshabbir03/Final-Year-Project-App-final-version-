@@ -38,10 +38,10 @@ export type RootStackParamList = {
   ChallengeDetail: { challengeId: number };
 };
 
+/** Screens of the side drawer (route "MainTabs" in the root stack). */
 export type MainTabParamList = {
   Dashboard: undefined;
   Tasks: undefined;
   Habits: undefined;
   Weather: undefined;
-  More: undefined;
 };

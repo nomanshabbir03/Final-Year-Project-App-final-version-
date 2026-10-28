@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from decouple import config
 import dj_database_url
+from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -170,6 +171,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS config for React Native / Expo development
 CORS_ALLOW_ALL_ORIGINS = True
+# The app sends X-User-Id on every request; without it here browsers (the web build) block them all.
+CORS_ALLOW_HEADERS = (*default_headers, 'x-user-id')
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:19006',
     'http://127.0.0.1:19006',

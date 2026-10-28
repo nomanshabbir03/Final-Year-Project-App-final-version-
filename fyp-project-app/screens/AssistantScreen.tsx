@@ -28,6 +28,7 @@ import { File, Paths } from 'expo-file-system';
 
 import { Colors, Radius } from '../constants/theme';
 import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import {
   sendAssistantMessage,
   speakText,
@@ -64,6 +65,10 @@ const VOICE_MIME_TYPE = Platform.OS === 'ios' ? 'audio/wav' : 'audio/aac';
 
 type ListItem = ChatMessage & { id: string; isError?: boolean };
 
+// The conversation lives in memory for as long as the app runs: closing and reopening the assistant
+// brings it back, while quitting the app (or another account signing in) starts a fresh one.
+let savedChat: { owner: string; messages: ListItem[] } = { owner: '', messages: [] };
+
 // Spoken replies should not read out markdown symbols.
 function toSpeakable(text: string) {
   return text.replace(/[*_#`>]+/g, '').trim();
@@ -72,8 +77,31 @@ function toSpeakable(text: string) {
 export function AssistantScreen() {
   const navigation = useNavigation();
   const { fetchTasks, fetchHabits } = useAppContext();
+  const { user } = useAuth();
+  const owner = user?.email ?? '';
   const recorder = useAudioRecorder(VOICE_RECORDING);
-  const [messages, setMessages] = useState<ListItem[]>([]);
+  const [messages, setMessages] = useState<ListItem[]>(() =>
+    savedChat.owner === owner ? savedChat.messages : []
+  );
+  useEffect(() => {
+    savedChat = { owner, messages };
+  }, [owner, messages]);
+
+  // A reply that arrives after the assistant was closed still goes into the saved conversation.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const addMessage = useCallback(
+    (item: ListItem) => {
+      if (mounted.current) setMessages((prev) => [...prev, item]);
+      else if (savedChat.owner === owner) savedChat = { owner, messages: [...savedChat.messages, item] };
+    },
+    [owner]
+  );
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -158,7 +186,7 @@ export function AssistantScreen() {
         const history = next.filter((m) => !m.isError).map(({ role, content: c }) => ({ role, content: c }));
         const result = await sendAssistantMessage(history);
         const replyId = `a${Date.now()}`;
-        setMessages((prev) => [...prev, { id: replyId, role: 'assistant', content: result.reply }]);
+        addMessage({ id: replyId, role: 'assistant', content: result.reply });
 
         // Tasks and habits are cached in AppContext; other modules reload when their screen opens.
         if (result.changed.includes('tasks')) {
@@ -169,24 +197,21 @@ export function AssistantScreen() {
         }
 
         // Talk back when the user talked.
-        if (viaVoice) {
+        if (viaVoice && mounted.current) {
           void speak(replyId, result.reply);
         }
       } catch (error) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `e${Date.now()}`,
-            role: 'assistant',
-            content: toApiErrorMessage(error, 'The assistant could not answer. Please try again.'),
-            isError: true,
-          },
-        ]);
+        addMessage({
+          id: `e${Date.now()}`,
+          role: 'assistant',
+          content: toApiErrorMessage(error, 'The assistant could not answer. Please try again.'),
+          isError: true,
+        });
       } finally {
-        setSending(false);
+        if (mounted.current) setSending(false);
       }
     },
-    [messages, sending, fetchTasks, fetchHabits, speak]
+    [messages, sending, fetchTasks, fetchHabits, speak, addMessage]
   );
 
   const startRecording = useCallback(async () => {
@@ -249,7 +274,21 @@ export function AssistantScreen() {
           <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.title}>Assistant</Text>
-        <View style={styles.back} />
+        {messages.length > 0 ? (
+          <Pressable
+            onPress={() => {
+              stopSpeaking();
+              setMessages([]);
+            }}
+            hitSlop={12}
+            style={styles.back}
+            accessibilityLabel="New chat"
+          >
+            <Ionicons name="create-outline" size={22} color={Colors.textPrimary} />
+          </Pressable>
+        ) : (
+          <View style={styles.back} />
+        )}
       </View>
 
       <KeyboardAvoidingView
