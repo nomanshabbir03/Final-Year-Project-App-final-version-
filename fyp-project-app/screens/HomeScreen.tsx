@@ -101,6 +101,8 @@ export function HomeScreen() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
   const [hijriDate, setHijriDate] = useState<DateInfo | null>(null);
+  // Scroll position of the rhythm strip, drives the slider indicator under it.
+  const [rhythmScroll, setRhythmScroll] = useState({ x: 0, content: 0, view: 0 });
   const [medications, setMedications] = useState<Medication[]>([]);
   const [stepsToday, setStepsToday] = useState<number | null>(null);
   // Visible height of the scroll area (depends only on the device, never on loaded data).
@@ -557,7 +559,7 @@ export function HomeScreen() {
       <View style={styles.greetingRow}>
         <View style={styles.greetingText}>
           <Text style={styles.dateMeta}>
-            {formatDate(currentTime)} {hijriDate && `· ${hijriDate.hijri.day} ${hijriDate.hijri.month.en}`}
+            {formatDate(currentTime)}
           </Text>
           <Text style={styles.greetingLine}>{getGreeting()}, {firstName}</Text>
           {/* Empty line kept on purpose so the card keeps its original height */}
@@ -609,12 +611,6 @@ export function HomeScreen() {
             <Text style={styles.weatherCity} numberOfLines={1}>{weather?.city ?? ''}</Text>
           </Pressable>
         </View>
-        {nextEvent && (
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: '30%' }]} />
-          </View>
-        )}
-        {weather && <Text style={styles.weatherMood}>{getWeatherMood()}</Text>}
       </Pressable>
 
       </View>
@@ -623,21 +619,24 @@ export function HomeScreen() {
       <View style={styles.statGrid}>
         {[statTiles.slice(0, 2), statTiles.slice(2)].map((row, rowIndex) => (
           <View key={rowIndex} style={styles.statRow}>
-            {row.map((tile) => (
+            {row.map((tile, colIndex) => {
+              const iconColor = STAT_ICON_COLORS[rowIndex * 2 + colIndex] ?? Colors.heroOrange;
+              return (
               <Pressable
                 key={tile.key}
                 style={({ pressed }) => [styles.statTile, pressed && styles.pressed]}
                 onPress={tile.onPress}
               >
-                <View style={styles.statIcon}>
-                  <Ionicons name={tile.icon} size={26} color={Colors.heroOrange} />
+                <View style={[styles.statIcon, { backgroundColor: iconColor + '26' }]}>
+                  <Ionicons name={tile.icon} size={26} color={iconColor} />
                 </View>
                 <View style={styles.statText}>
                   <Text style={styles.statLabel}>{tile.label}</Text>
                   <Text style={styles.statValue} numberOfLines={1}>{tile.value}</Text>
                 </View>
               </Pressable>
-            ))}
+              );
+            })}
           </View>
         ))}
       </View>
@@ -671,113 +670,113 @@ export function HomeScreen() {
         </View>
       </Pressable>
 
-      {/* Today's rhythm: the whole day on one timeline, anchored on the five prayers */}
-      <View style={styles.rhythmCard}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Today's rhythm</Text>
-        </View>
+      {/* Today's rhythm: compact "up next" hero + swipeable day strip */}
+      {(() => {
+        const nextItem = rhythmItems.find((item) => item.key === nextRhythmKey);
+        const doneCount = rhythmItems.filter((item) => item.minutes !== null && item.minutes <= nowMinutes).length;
+        const itemColor = (item: RhythmItem) =>
+          item.kind === 'prayer' ? Colors.accentAmber : item.kind === 'medication' ? Colors.accentBlue : Colors.success;
+        const itemIcon = (item: RhythmItem): keyof typeof Ionicons.glyphMap =>
+          item.kind === 'prayer' ? (PRAYER_ICONS[item.title] ?? 'time') : item.kind === 'medication' ? 'medkit' : 'checkmark';
+        return (
+          <View style={styles.rhythmCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Today's rhythm</Text>
+              <Text style={styles.rhythmCount}>{doneCount} of {rhythmItems.length} done</Text>
+            </View>
 
-        <View>
-          {rhythmItems.map((item, index) => {
-            const isFirst = index === 0;
-            const isLast = index === rhythmItems.length - 1;
-            const isPrayer = item.kind === 'prayer';
-            const isNext = item.key === nextRhythmKey;
-            const past = item.minutes !== null && item.minutes <= nowMinutes;
-            const nodeIcon: keyof typeof Ionicons.glyphMap = isPrayer
-              ? (PRAYER_ICONS[item.title] ?? 'time')
-              : item.kind === 'medication'
-                ? 'medkit'
-                : 'checkmark';
-            return (
+            {nextItem && (
               <Pressable
-                key={item.key}
-                style={[styles.rhythmRow, isNext && styles.rhythmRowNext]}
-                onPress={item.onPress}
-                disabled={!item.onPress}
+                style={({ pressed }) => [styles.rhythmHero, pressed && styles.pressed]}
+                onPress={nextItem.onPress}
+                disabled={!nextItem.onPress}
               >
-                <View style={styles.rhythmRail}>
-                  <View
-                    style={[
-                      styles.rhythmLine,
-                      isFirst && { top: 20 },
-                      isLast && { bottom: undefined, height: 20 },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.rhythmNode,
-                      isPrayer ? styles.rhythmNodePrayer : styles.rhythmNodeSmall,
-                      item.kind === 'medication' && styles.rhythmNodeMed,
-                      item.kind === 'task' && styles.rhythmNodeTask,
-                      past && styles.rhythmNodePast,
-                      isNext && styles.rhythmNodeNext,
-                    ]}
+                <View style={[styles.rhythmHeroIcon, { backgroundColor: itemColor(nextItem) }]}>
+                  <Ionicons name={itemIcon(nextItem)} size={22} color={Colors.white} />
+                </View>
+                <View style={styles.rhythmTextCol}>
+                  <Text style={styles.rhythmNextTag}>UP NEXT · in {getTimeUntil(minutesToDate(nextItem.minutes ?? 0))}</Text>
+                  <Text style={styles.rhythmHeroTitle} numberOfLines={1}>{nextItem.title}</Text>
+                </View>
+                <Text style={styles.rhythmHeroTime}>{nextItem.timeLabel}</Text>
+              </Pressable>
+            )}
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.rhythmStrip}
+              nestedScrollEnabled
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                setRhythmScroll({ x: contentOffset.x, content: contentSize.width, view: layoutMeasurement.width });
+              }}
+              onContentSizeChange={(w) => setRhythmScroll((s) => ({ ...s, content: w }))}
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                setRhythmScroll((s) => ({ ...s, view: w }));
+              }}
+            >
+              {rhythmItems.map((item) => {
+                const past = item.minutes !== null && item.minutes <= nowMinutes;
+                const isNext = item.key === nextRhythmKey;
+                const color = past ? Colors.textHint : itemColor(item);
+                return (
+                  <Pressable
+                    key={item.key}
+                    style={[styles.rhythmChip, isNext && styles.rhythmChipNext, past && styles.rhythmChipPast]}
+                    onPress={item.onPress}
+                    disabled={!item.onPress}
                   >
-                    <Ionicons
-                      name={nodeIcon}
-                      size={isPrayer ? 16 : 12}
-                      color={isNext || (!past && isPrayer) ? Colors.white : isPrayer ? Colors.textHint : Colors.white}
+                    <View style={[styles.rhythmChipIcon, { backgroundColor: color + '22' }]}>
+                      <Ionicons name={past ? 'checkmark' : itemIcon(item)} size={16} color={color} />
+                    </View>
+                    <Text style={styles.rhythmChipTitle} numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.rhythmChipTime}>{item.timeLabel}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Slider: shows where you are in the day strip and that it can be swiped */}
+            {rhythmScroll.content > rhythmScroll.view + 4 && rhythmScroll.view > 0 && (() => {
+              const maxScroll = rhythmScroll.content - rhythmScroll.view;
+              const progress = Math.min(1, Math.max(0, rhythmScroll.x / maxScroll));
+              const thumbPct = Math.max(0.2, rhythmScroll.view / rhythmScroll.content);
+              return (
+                <View style={styles.rhythmSliderRow}>
+                  <View style={styles.rhythmSliderTrack}>
+                    <View
+                      style={[
+                        styles.rhythmSliderThumb,
+                        { width: `${thumbPct * 100}%`, left: `${progress * (1 - thumbPct) * 100}%` },
+                      ]}
                     />
                   </View>
                 </View>
+              );
+            })()}
 
-                <View style={[styles.rhythmBody, past && styles.rhythmBodyPast]}>
-                  <View style={styles.rhythmTextCol}>
-                    <Text style={isPrayer ? styles.rhythmPrayerName : styles.rhythmEventName} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    {isNext ? (
-                      <Text style={styles.rhythmNextTag}>Up next · in {getTimeUntil(minutesToDate(item.minutes ?? 0))}</Text>
-                    ) : item.detail ? (
-                      <Text style={styles.rhythmDetail} numberOfLines={1}>{item.detail}</Text>
-                    ) : null}
-                  </View>
-                  <Text style={isPrayer ? styles.rhythmPrayerTime : styles.rhythmEventTime}>{item.timeLabel}</Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* Tasks due today without a set time */}
-        {anytimeTasks.length > 0 && (
-          <View style={styles.anytimeBlock}>
-            <Text style={styles.anytimeLabel}>ANYTIME TODAY</Text>
-            {anytimeTasks.slice(0, 3).map((task) => (
-              <Pressable key={task.id} style={styles.anytimeRow} onPress={() => handleTaskToggle(task.id)}>
-                <View style={styles.anytimeBullet} />
-                <Text style={styles.anytimeTitle} numberOfLines={1}>{task.title}</Text>
-              </Pressable>
-            ))}
-            {anytimeTasks.length > 3 && (
-              <Pressable onPress={() => navigation.navigate('Tasks')}>
-                <Text style={styles.sectionLink}>{anytimeTasks.length - 3} more →</Text>
-              </Pressable>
+            {(anytimeTasks.length > 0 || habits.length > 0) && (
+              <View style={styles.rhythmFooter}>
+                {anytimeTasks.length > 0 && (
+                  <Pressable style={styles.rhythmPill} onPress={() => navigation.navigate('Tasks')}>
+                    <Ionicons name="list" size={14} color={Colors.success} />
+                    <Text style={styles.rhythmPillText}>{anytimeTasks.length} anytime {anytimeTasks.length === 1 ? 'task' : 'tasks'}</Text>
+                  </Pressable>
+                )}
+                {habits.length > 0 && (
+                  <Pressable style={styles.rhythmPill} onPress={() => navigation.navigate('Habits')}>
+                    <Ionicons name="checkmark-done" size={14} color={Colors.primary} />
+                    <Text style={styles.rhythmPillText}>Habits {completedHabitsToday}/{habits.length}</Text>
+                  </Pressable>
+                )}
+              </View>
             )}
           </View>
-        )}
-
-        {/* Habits progress */}
-        {habits.length > 0 && (
-          <Pressable style={styles.habitSummary} onPress={() => navigation.navigate('Habits')}>
-            <View style={styles.noteIcon}>
-              <Ionicons name="checkmark-done" size={16} color={Colors.success} />
-            </View>
-            <Text style={styles.habitSummaryText}>
-              Habits · {completedHabitsToday} of {habits.length} done today
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
-          </Pressable>
-        )}
-
-        <View style={styles.contextualNoteRow}>
-          <View style={styles.noteIcon}>
-            <Ionicons name="water" size={16} color={Colors.accentTeal} />
-          </View>
-          <Text style={styles.contextualNote}>{getContextualNote()}</Text>
-        </View>
-      </View>
+        );
+      })()}
 
     </ScrollView>
   );
@@ -815,6 +814,9 @@ function isNightNow() {
     return false;
   }
 }
+
+// Orange, blue, green, purple — one per dashboard stat tile.
+const STAT_ICON_COLORS = ['#FF8248', '#3B82F6', '#10B981', '#8B5CF6'];
 
 const styles = StyleSheet.create({
   screen: {
@@ -1033,7 +1035,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderRadius: Radius.lg,
     padding: 16,
-    backgroundColor: Colors.heroOrange,
+    backgroundColor: Colors.white,
     ...Shadows.button,
   },
   statIcon: {
@@ -1042,18 +1044,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: 'rgba(255,130,72,0.15)',
   },
   statText: {},
   statLabel: {
     fontSize: 14,
     fontFamily: Font.semibold,
-    color: 'rgba(255,255,255,0.9)',
+    color: Colors.textSecondary,
   },
   statValue: {
     fontSize: 18,
     fontFamily: Font.extrabold,
-    color: Colors.white,
+    color: Colors.textPrimary,
     marginTop: 1,
   },
 
@@ -1165,7 +1167,57 @@ const styles = StyleSheet.create({
   rhythmEventName: { fontSize: 15, fontFamily: Font.semibold, color: Colors.textPrimary },
   rhythmEventTime: { fontSize: 14, fontFamily: Font.semibold, color: Colors.textSecondary },
   rhythmDetail: { fontSize: 13, fontFamily: Font.medium, color: Colors.textSecondary },
-  rhythmNextTag: { fontSize: 13, fontFamily: Font.bold, color: Colors.primary },
+  rhythmNextTag: { fontSize: 12, fontFamily: Font.extrabold, color: Colors.primary, letterSpacing: 0.6 },
+  rhythmCount: { fontSize: 13, fontFamily: Font.semibold, color: Colors.textSecondary },
+  rhythmHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.tintOrange,
+    borderRadius: Radius.md,
+    padding: 12,
+  },
+  rhythmHeroIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  rhythmHeroTitle: { fontSize: 18, fontFamily: Font.extrabold, color: Colors.textPrimary },
+  rhythmHeroTime: { fontSize: 16, fontFamily: Font.bold, color: Colors.textPrimary },
+  rhythmStrip: { gap: 10, paddingRight: 4 },
+  rhythmChip: {
+    width: 92,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.bgLight,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  rhythmChipNext: { borderColor: Colors.primary, backgroundColor: Colors.white },
+  rhythmChipPast: { opacity: 0.6 },
+  rhythmChipIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  rhythmChipTitle: { fontSize: 13, fontFamily: Font.bold, color: Colors.textPrimary },
+  rhythmChipTime: { fontSize: 12, fontFamily: Font.medium, color: Colors.textSecondary },
+  rhythmSliderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -6 },
+  rhythmSliderTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.borderLight,
+    overflow: 'hidden',
+  },
+  rhythmSliderThumb: { position: 'absolute', top: 0, bottom: 0, borderRadius: 2, backgroundColor: Colors.primary },
+  rhythmSliderHint: { fontSize: 12, fontFamily: Font.bold, color: Colors.primary },
+  rhythmFooter: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  rhythmPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.bgLight,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  rhythmPillText: { fontSize: 13, fontFamily: Font.semibold, color: Colors.textSecondary },
   anytimeBlock: { gap: 8 },
   anytimeLabel: { fontSize: 12, fontFamily: Font.extrabold, color: Colors.textSecondary, letterSpacing: 1 },
   anytimeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
