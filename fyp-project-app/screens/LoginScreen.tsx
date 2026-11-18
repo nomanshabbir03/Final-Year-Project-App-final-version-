@@ -34,6 +34,7 @@ export function LoginScreen() {
   const [email, setEmail] = useState(route.params?.email ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetCode, setResetCode] = useState('');
@@ -52,7 +53,7 @@ export function LoginScreen() {
   const handleLogin = async () => {
     setLoading(true);
     try {
-      const result = await login(email, password);
+      const result = await login(email, password, rememberMe);
       if (result.needsVerification) {
         navigation.navigate('ConfirmCode', { email: email.trim().toLowerCase() });
       } else if (!result.ok) {
@@ -184,10 +185,23 @@ export function LoginScreen() {
             </View>
           </View>
 
-          {/* Forgot Password */}
-          <Pressable style={styles.forgotPasswordContainer} onPress={handleForgotPassword}>
-            <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-          </Pressable>
+          {/* Remember me + Forgot Password */}
+          <View style={styles.optionsRow}>
+            <Pressable
+              style={styles.rememberRow}
+              onPress={() => setRememberMe((v) => !v)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: rememberMe }}
+            >
+              <View style={[styles.checkbox, rememberMe && styles.checkboxOn]}>
+                {rememberMe && <Ionicons name="checkmark" size={14} color={Colors.white} />}
+              </View>
+              <Text style={styles.rememberText}>Remember me</Text>
+            </Pressable>
+            <Pressable onPress={handleForgotPassword}>
+              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+            </Pressable>
+          </View>
 
           {/* SECTION 3 — SIGN IN BUTTON */}
           <Pressable 
@@ -377,12 +391,27 @@ const styles = StyleSheet.create({
   },
 
   // Forgot Password
-  forgotPasswordContainer: {
-    alignItems: 'flex-end',
+  optionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
   },
+  rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: Colors.borderLight,
+    backgroundColor: Colors.bgLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  rememberText: { fontSize: 15, fontFamily: Font.semibold, color: Colors.textSecondary },
   forgotPasswordText: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: Font.bold,
     color: Colors.primary,
   },

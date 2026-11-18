@@ -2,6 +2,7 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
+import { installOffline } from './offlineSync';
 
 const BACKEND_PORT = 8080;
 
@@ -93,6 +94,9 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Offline mode: cache reads and queue writes while there is no connection (see offlineSync.ts).
+installOffline(api, () => requestUserId);
 
 export function parseJsonData<T>(data: unknown): T {
   if (typeof data === 'string') {

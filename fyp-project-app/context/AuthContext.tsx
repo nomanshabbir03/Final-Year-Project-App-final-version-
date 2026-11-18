@@ -10,6 +10,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { supabase } from '../services/supabase';
+import axios from 'axios';
+import { clearOfflineCache } from '../services/offlineSync';
 import { deviceTimezone, setReminderPreferences } from '../services/reminderService';
 
 type AuthUser = {
@@ -42,7 +44,7 @@ type AuthContextValue = {
   isLoading: boolean;
   isAuthenticated: boolean;
   user: AuthUser | null;
-  login: (email: string, password: string) => Promise<AuthResult>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<AuthResult>;
   signup: (email: string, password: string, fullName?: string) => Promise<AuthResult>;
   verifyEmail: (email: string, code: string) => Promise<AuthResult>;
   resendVerification: (email: string) => Promise<AuthResult>;
@@ -56,6 +58,34 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 // (needs DEV_AUTH_BYPASS=True in fyp-backend/.env). Turn off by removing EXPO_PUBLIC_AUTH_BYPASS.
 const AUTH_BYPASS = process.env.EXPO_PUBLIC_AUTH_BYPASS === '1';
 const BYPASS_KEY = 'auth.bypassSignedIn';
+
+// "Remember me" keeps the user signed in for 30 days from login; otherwise 1 day.
+const SESSION_POLICY_KEY = 'auth.sessionPolicy';
+const REMEMBER_ME_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_SESSION_MS = 24 * 60 * 60 * 1000;
+
+async function saveSessionPolicy(rememberMe: boolean) {
+  await AsyncStorage.setItem(
+    SESSION_POLICY_KEY,
+    JSON.stringify({ startedAt: Date.now(), rememberMe })
+  ).catch(() => {});
+}
+
+// True once the stored sign-in is older than its allowed lifetime. A missing policy (accounts
+// signed in before this existed) starts a fresh 1-day window instead of logging anyone out.
+async function isSessionExpired() {
+  try {
+    const raw = await AsyncStorage.getItem(SESSION_POLICY_KEY);
+    if (!raw) {
+      await saveSessionPolicy(false);
+      return false;
+    }
+    const { startedAt, rememberMe } = JSON.parse(raw) as { startedAt: number; rememberMe: boolean };
+    return Date.now() - startedAt > (rememberMe ? REMEMBER_ME_MS : DEFAULT_SESSION_MS);
+  } catch {
+    return false;
+  }
+}
 
 function toAuthUser(payload: AuthPayload, token: string): AuthUser {
   return {
@@ -106,14 +136,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(toAuthUser(payload, ''));
           return;
         }
-        const { data } = await supabase.auth.getSession();
-        if (data.session) {
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        // Offline with an expired access token: supabase cannot refresh it, but the stored sign-in
+        // is still valid. Open the app from the profile saved on the phone; the token is refreshed
+        // automatically once the connection is back.
+        if (!data.session && sessionError && /fetch|network/i.test(`${sessionError.name} ${sessionError.message}`)) {
+          if (!(await isSessionExpired())) {
+            try {
+              const payload = await meRequest();
+              setApiRequestUserId(payload.user_id);
+              setUser(toAuthUser(payload, ''));
+            } catch {
+              // nothing saved yet: fall through to the login screen
+            }
+          }
+          return;
+        }
+        if (data.session && (await isSessionExpired())) {
+          await supabase.auth.signOut();
+          await AsyncStorage.removeItem(SESSION_POLICY_KEY).catch(() => {});
+          clearSession();
+        } else if (data.session) {
           try {
             await hydrate(data.session);
           } catch (error) {
-            console.warn('Stored session is invalid, clearing it', error);
-            await supabase.auth.signOut();
-            clearSession();
+            if (axios.isAxiosError(error) && !error.response) {
+              // No connection and nothing saved on the phone yet: keep the stored sign-in for later.
+              console.warn('Offline and no saved profile, showing login', error);
+              clearSession();
+            } else {
+              console.warn('Stored session is invalid, clearing it', error);
+              await supabase.auth.signOut();
+              clearSession();
+            }
           }
         }
       } catch (error) {
@@ -138,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string): Promise<AuthResult> => {
+  const login = async (email: string, password: string, rememberMe = false): Promise<AuthResult> => {
     if (AUTH_BYPASS) {
       try {
         setApiAuthToken(null);
@@ -173,6 +228,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await hydrate(data.session);
+      await saveSessionPolicy(rememberMe);
       return { ok: true };
     } catch (err) {
       await supabase.auth.signOut();
@@ -207,6 +263,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await hydrate(data.session);
+      await saveSessionPolicy(false);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: toApiErrorMessage(err, 'Signup failed. Please try again.') };
@@ -225,6 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await hydrate(data.session);
+      await saveSessionPolicy(false);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: toApiErrorMessage(err, 'Could not finish signing in.') };
@@ -277,6 +335,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     await AsyncStorage.removeItem(BYPASS_KEY).catch(() => {});
+    await AsyncStorage.removeItem(SESSION_POLICY_KEY).catch(() => {});
+    await clearOfflineCache();
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.warn('Supabase sign out failed, clearing local session anyway', error);

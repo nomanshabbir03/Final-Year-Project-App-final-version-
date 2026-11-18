@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { onOfflineSynced } from '../services/offlineSync';
 import {
   completeHabit as completeHabitRequest,
   createHabit as createHabitRequest,
@@ -161,6 +162,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const preloadDashboardData = useCallback(async () => {
     await Promise.all([fetchTasks(true), fetchHabits(true)]);
   }, [fetchHabits, fetchTasks]);
+
+  // After offline changes were uploaded, reload so temporary ids are replaced by the real ones.
+  useEffect(() => onOfflineSynced(() => { preloadDashboardData().catch(() => {}); }), [preloadDashboardData]);
 
   // Every task change goes through here so the shared list, the ref and the reminders stay in sync.
   const commitTasks = useCallback((update: (prev: Task[]) => Task[]) => {
